@@ -4,3 +4,6 @@
 [submodule "trikey_control"]
 	path = trikey_control
 	url = https://github.com/carlosiglezb/trikey_control.git
+[submodule "trikey_gazebo"]
+	path = trikey_gazebo
+	url = https://github.com/carlosiglezb/trikey_gazebo.git
