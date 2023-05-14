@@ -1,0 +1,6 @@
+[submodule "trikey_description"]
+	path = trikey_description
+	url = https://github.com/carlosiglezb/trikey_description.git
+[submodule "trikey_control"]
+	path = trikey_control
+	url = https://github.com/carlosiglezb/trikey_control.git
