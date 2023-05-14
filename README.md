@@ -21,6 +21,8 @@ Currently, we are using the following:
 * Azure Kinect
 * RP Lidar 2D (A2M8)
 
+![real-bumpybot-move-right](https://github.com/carlosiglezb/bumpybot/assets/97119009/00107578-1676-4b36-a3f5-226d36a4ed69)
+
 # Dependencies
 
 This stack has mostly `ros_control` dependencies. If you have already done a full ROS
@@ -156,3 +158,19 @@ run the base controller
 
 This will, by default, also open up the RViz window with the teleop
 plugins loaded.
+
+# Publication
+
+This code base is associated to the following publication, please feel free
+to check it out: 
+
+``` latex
+@proceedings{bumpybot,
+    author = {Gonzalez, Carlos and Lee, Samantha and Montano, Francisco and Ortega, Steven and Kang, Dong Ho and Jaiswal, Mehar and Jiao, Junfeng and Sentis, Luis},
+    title = {Design of a Person-Carrying Robot for Contact Compliant Navigation},
+    series = {International Design Engineering Technical Conferences and Computers and Information in Engineering Conference},
+    year = {2023},
+    month = {08}
+}
+```
+All feedback is welcome!
