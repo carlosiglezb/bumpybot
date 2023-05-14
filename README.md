@@ -40,11 +40,13 @@ ros-<distro>-controller-manager ros-<distro>-hardware-interface
 # Installation
 
 This stack has been developed (and only tested) on Ubuntu 18.04 LTS and
-ROS 1. To build, clone this repository into your catkin workspace:
+ROS 1. To build, clone this repository into your catkin workspace and make
+sure all submodules are on the main branch:
 
 ```
-~ $ cd catkin_ws/src 
-~/catkin_ws/src $ git clone --recurse-submodules https://github.com/carlosiglezb/bumpybot.git
+~ $ cd catkin_ws
+~/catkin_ws $ git clone --recurse-submodules https://github.com/carlosiglezb/bumpybot.git src
+~/catkin_ws $ cd src && git submodule foreach 'git checkout main'
 ```
 
 and then build, either with catkin_make or catkin tools, e.g,
