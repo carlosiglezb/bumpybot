@@ -10,3 +10,6 @@
 [submodule "bumpybot_teleop"]
 	path = bumpybot_teleop
 	url = https://github.com/carlosiglezb/bumpybot_teleop.git
+[submodule "trikey_base_controller"]
+	path = trikey_base_controller
+	url = https://github.com/carlosiglezb/trikey_base_controller.git
