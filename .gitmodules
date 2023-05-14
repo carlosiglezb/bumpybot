@@ -7,3 +7,6 @@
 [submodule "trikey_gazebo"]
 	path = trikey_gazebo
 	url = https://github.com/carlosiglezb/trikey_gazebo.git
+[submodule "bumpybot_teleop"]
+	path = bumpybot_teleop
+	url = https://github.com/carlosiglezb/bumpybot_teleop.git
