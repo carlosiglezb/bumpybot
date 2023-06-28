@@ -13,6 +13,3 @@
 [submodule "trikey_base_controller"]
 	path = trikey_base_controller
 	url = https://github.com/carlosiglezb/trikey_base_controller.git
-[submodule "bumpybot_hardware_interface"]
-	path = bumpybot_hardware_interface
-	url = https://github.com/carlosiglezb/bumpybot_hardware_interface.git
