@@ -1,0 +1,5 @@
+# ROS network settings for bumpybot
+export ROS_MASTER_URI=http://192.168.2.5:11311
+export ROS_IP=192.168.2.5
+xhost local:hcrl-bumpybot
+alias record_bumpybot_hw='rosbag record -e "/trikey/base_controller/(.*)" /joint_states /servo_temp'
