@@ -22,7 +22,8 @@ sudo su
 Then run the hw interface on the robot: \
 **Note: _Remember to add the ros network configuation settings to the `.bashrc` of 
 the superuser. Alternatively you may also run: `source bbot.setup`._ \
-**Note: _If you disconnected the motor ethernet port reconnect the cable to continue._
+**Note: _If you disconnected the motor ethernet port reconnect the cable to continue._ \
+**Note: _If `Slave 1 State=  12 StatusCode=  24 : Invalid input mapping` occurs and motors turn on, ctrl-C and relaunch hw interface_
  
 ```
 roslaunch bumpybot_hw_interface hw_control.launch
