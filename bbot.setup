@@ -1,4 +1,4 @@
-# ROS network settings for bumpybot
+# Example ROS network settings for bumpybot
 export ROS_MASTER_URI=http://192.168.2.5:11311
 export ROS_IP=192.168.2.5
 xhost local:hcrl-bumpybot
