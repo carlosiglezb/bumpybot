@@ -14,7 +14,7 @@ When running the real robot, we often SSH into it and run as superuser: \
 ethernet port when connecting the computer to BumpyBot.
 
 ```
-ssh hcrl-bumpybot@192.168.2.3
+ssh hcrl-bumpybot@192.168.2.3       #Example HOSTNAME@IP.ADDRESS
 sudo su
 ```
 
