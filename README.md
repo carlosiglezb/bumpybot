@@ -61,12 +61,14 @@ Lastly, don't forget to source:
 ~/catkin_ws $ source devel/setup.bash
 ```
 
-# Running the simulation
+# Setup
+Additional setup steps must be taken depending on if you are using simulation 
+or the real robot. Go to their respective files to see the instructions:
+* [Real Robot Setup](./RealRobot.md)
+* [Simulation Setup](./Simulation.md)
 
-This assumes you have already successfully gone through the 
-[Installation](#installation) instructions above and are in your
-corresponding `catkin_ws` folder.
-We currently have two modes of operation: base velocity, or wheel torque control. 
+
+# Running the Robot
 
 ## Base Velocity Control Mode
 
@@ -101,12 +103,7 @@ roslaunch trikey_base_controller trikey_base_controller.launch
 
 ### Using the provided teleop package
 
-To visualize the robot and control it in RViz, simply run 
-
-```
-roslaunch trikey_gazebo gazebo.launch
-```
-to launch the robot and, on a separate terminal, run
+ Run
 
  ```
  roslaunch trikey_base_controller trikey_base_controller.launch
@@ -117,13 +114,7 @@ making sure one of the provided rviz files is loaded in the launch file.
 
 ## Single Wheel Control Mode
 
-This simply commands wheel velocities independently. To run this mode, simply run 
-
-```
-roslaunch trikey_gazebo gazebo.launch
-```
-
-This will launch Gazebo and spawn the robot. Now, open a new terminal window and load the controllers
+This simply commands wheel velocities independently. Open a new terminal window and load the controllers
 
 ```
 roslaunch trikey_control trikey_control.launch
@@ -140,26 +131,6 @@ Try setting the commanded wheel position (in radians) via the ROS topic `wheel<n
 ```
 rostopic pub -1 /trikey/wheel1_position_controller/command std_msgs/Float64 "data: 1"
 ```
-
-# Running the robot
-
-When running the real robot, we often SSH into it, then run (as superuser)
-
-```
-roslaunch bumpybot_hw_interface hw_control.launch
-```
-
-This initializes the EtherCAT communication and sets the servo drives into
-their ENABLE state, ready to use. Additional arguments can be passed on
-to run with the camera and/or Lidar ON. Then, on a separate terminal window,
-run the base controller
-
-  ```
- roslaunch trikey_base_controller trikey_base_controller.launch
- ``` 
-
-This will, by default, also open up the RViz window with the teleop
-plugins loaded.
 
 # Publication
 
