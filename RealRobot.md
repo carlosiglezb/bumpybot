@@ -35,13 +35,11 @@ their ENABLE state, ready to use. Additional arguments can be passed on
 to run with the camera and/or Lidar ON. Then, on a separate terminal window,
 run the base controller
 
-  ```
- roslaunch trikey_base_controller trikey_base_controller.launch
- ``` 
+```
+roslaunch trikey_base_controller trikey_base_controller.launch
+```
 
-This will, by default, also open up the RViz window with the teleop
-plugins loaded.
-
+This will, by default, also run the robot in xbox teleop mode. To change to RViz, add `controller:=false` at the end of roslaunch line.
 
 ## Extra
 
@@ -49,4 +47,14 @@ If tab completion is not working, try adding the package to `ROS_PACKAGE_PATH`
 with:
 ```
 export ROS_PACKAGE_PATH=`pwd`:$ROS_PACKAGE_PATH
+```
+
+To test if motors are functional without ROS run these line.
+
+```
+cd ~/ros/hcrl_core/soem/install/bin
+```
+
+```
+sudo ./everest_test enp1s0
 ```
