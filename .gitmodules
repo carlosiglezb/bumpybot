@@ -16,3 +16,6 @@
 [submodule "bumpybot_hardware_interface"]
 	path = bumpybot_hardware_interface
 	url = https://github.com/carlosiglezb/bumpybot_hardware_interface.git
+[submodule "bumpybot_navigation"]
+	path = bumpybot_navigation
+	url = https://github.com/dokkev/bumpybot_navigation.git
