@@ -62,23 +62,79 @@ Lastly, don't forget to source:
 ```
 
 # Setup
-Additional setup steps must be taken depending on if you are using simulation 
-or the real robot. Go to their respective files to see the instructions:
-* [Real Robot Setup](./RealRobot.md)
-* [Simulation Setup](./Simulation.md)
+
+If you intend to use the BumpyBot in Gazebo simulation,  refer to the following package:
+* [trikey_gazebo](https://github.com/carlosiglezb/trikey_gazebo/tree/main)
 
 
-# Running the Robot
+## Robot Bootup
+Turn on the swiches for Battery, Logic, and Motor.
+If the local computer is not turned on, manually boot up the computer.
+Set up your network settings to connect to the robot.
 
-## Base Velocity Control Mode
+For wireless connection, make sure to conenct your remote computer to the hcrlab2 wireless network.
+You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
-This can be used to command linear and angular velocities (e.g., through `cmd_vel`) 
+## Robot Connection
+You can access the BumpyBot computer through SSH either from ethernet or WiFi.
+
+For ethernet connection, you need to confguire your IPv4 addressess to be in the same subnet as the robot.
+
+For wireless connection, make sure to conenct your remote computer to the hcrlab2 wireless network.
+You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
+
+## ROS Network Setup
+If you are hosting `roscore` on you remote computer, you need to set the ROS_MASTER_URI on both your remote computer and the BumpyBot computer.
+This configuration can be set in the `.bashrc` file.
+
+## Robot Launch
+In order to launch the robot, you need to run the following commands on the BumpyBot computer.
+```
+sudo su
+```
+This command will log you into root with the root environment. This is necessary to run the motors
+
+In the root enviroment, ROS packages may not be located automatically, access to the `bumpybot_hardward_interface` by following command
+```
+cd ~/bumpybot_ws/src/bumpybot_hardware_interface/launch
+```
+Then run the following command to launch the robot
+```
+roslaunch hw_control.launch
+```
+
+You may see the following error message
+```
+Slave 1 State=  12 StatusCode=  24 : Invalid input mapping` 
+```
+
+Kill the process by `ctrl-C` and relaunch it.
+
+## Robot Manual Control
+
+### Xbox Controller
+To control the robot with an Xbox controller, run the following command
+```
+roslaunch trikey_base_controller trikey_base_controller.launch
+```
+
+Press and hold RB or LB to move the robot with joystick and D-pad.
+
+### RViz Teleop Gui Control
+To control the robot with RViz Teleop Gui, run the following command
+```
+roslaunch trikey_base_controller trikey_base_controller.launch xbox:=false
+```
+You can send velocity commands by gui.
+
+
+<!-- This can be used to command linear and angular velocities (e.g., through `cmd_vel`) 
 of the base of the robot. The 
 [base_controller](https://github.com/carlosiglezb/trikey_base_controller) 
 package then computes the corresponding wheel 
 velocities to achieve the desired twist. For instance, these commands can be
 sent for teleop via the `teleop-twist-keyboard` package, or via our
-provided [RViz plugin](https://github.com/carlosiglezb/bumpybot_teleop). 
+provided [RViz plugin](https://github.com/carlosiglezb/bumpybot_teleop).  -->
 
 ### Using teleop-twist-keyboard
 
@@ -97,22 +153,12 @@ rosrun teleop_twist_keyboard teleop_twist_keyboard.py cmd_vel:=trikey/base_contr
 and on another one run the keyboard controller
 
 ```
-roslaunch trikey_base_controller trikey_base_controller.launch
+roslaunch trikey_base_controller trikey_base_controller.launch xbox:=false
 ```
 
 
-### Using the provided teleop package
 
- Run
-
- ```
- roslaunch trikey_base_controller trikey_base_controller.launch
- ``` 
-
-making sure one of the provided rviz files is loaded in the launch file.
-
-
-## Single Wheel Control Mode
+### Single Wheel Control Mode
 
 This simply commands wheel velocities independently. Open a new terminal window and load the controllers
 
@@ -131,6 +177,29 @@ Try setting the commanded wheel position (in radians) via the ROS topic `wheel<n
 ```
 rostopic pub -1 /trikey/wheel1_position_controller/command std_msgs/Float64 "data: 1"
 ```
+
+## Extra
+
+If tab completion is not working, try adding the package to `ROS_PACKAGE_PATH` 
+with:
+```
+export ROS_PACKAGE_PATH=`pwd`:$ROS_PACKAGE_PATH
+```
+
+To test if motors are functional without ROS run these line.
+
+```
+cd ~/ros/hcrl_core/soem/install/bin
+```
+
+```
+sudo ./everest_test enp1s0
+```
+
+
+## Robot Navigation
+
+refer to [bumybot_navigation](https://github.com/dokkev/bumpybot_navigation) package for more information.
 
 # Publication
 
