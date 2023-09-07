@@ -90,6 +90,9 @@ If bumpybot wifi is not published, run `sudo hotspot_mode.sh`
 
 Note that BumpyBot computer may not be able to connect to the internet in this mode.
 
+
+
+
 ### Wireless Connection: hcrlab2 WiFi
 
 On BumpyBot computer run
@@ -99,7 +102,22 @@ For wireless connection, make sure to conenct your remote computer to the hcrlab
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
 
-### 
+### Camera Launch
+To launch the camera, run the following command on the BumpyBot computer (No sudo su)
+```
+roslaunch azure_kinect_ros_driver driver.launch
+```
+
+to run as nodelet, run
+```
+roslaunch azure_kinect_ros_driver kinect_rgbd.launch
+```
+
+to launch with `trikey_base_controller`
+```
+roslaunch bumpyboy_navigation depth_nav.launch
+```
+
 
 ## ROS Network Setup
 If you are hosting `roscore` on you remote computer, you need to set the ROS_MASTER_URI on both your remote computer and the BumpyBot computer.
