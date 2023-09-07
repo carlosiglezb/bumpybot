@@ -49,7 +49,7 @@ git clone --recurse-submodules https://github.com/carlosiglezb/bumpybot.git src
 cd src && git submodule foreach 'git checkout main'
 ```
 
-and then build, either with catkin_make or catkin tools, e.g,
+and then build, either with catkin_make or catkin tools, e.g:
 
 ```
 cd ~/catkin_ws
@@ -59,7 +59,8 @@ catkin_make
 Lastly, don't forget to source:
 
 ```
-~/catkin_ws $ source devel/setup.bash
+cd ~/catkin_ws
+source devel/setup.bash
 ```
 
 # Setup
@@ -69,18 +70,18 @@ If you intend to use the BumpyBot in Gazebo simulation,  refer to the following 
 
 
 ## Robot Bootup
-Turn on the swiches for Battery, Logic, and Motor.
+Turn on the switches for Battery, Logic, and Motor.
 If the local computer is not turned on, manually boot up the computer.
 Set up your network settings to connect to the robot.
 
-For wireless connection, make sure to conenct your remote computer to the hcrlab2 wireless network.
+For a wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
 ## Robot Connection
 You can access the BumpyBot computer through SSH either from ethernet or WiFi.
 
 ### Ethernet Connection
-For ethernet connection, you need to confguire your IPv4 addressess to be in the same subnet as the robot.
+For an ethernet connection, you need to confirm your IPv4 addresses to be in the same subnet as the robot.
 
 
 ### Wireless Connection: bumpybot WiFi (Default)
@@ -93,13 +94,15 @@ Note that BumpyBot computer may not be able to connect to the internet in this m
 
 
 
-### Wireless Connection: hcrlab2 WiFi
+### Wireless Connection via hcrlab2 WiFi network
 
 On BumpyBot computer run
 `sudo wifi_mode.sh`
 
 For wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
-You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
+You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.50.35`
+
+This will disable hotspot if already running.
 
 
 ### Camera Launch
