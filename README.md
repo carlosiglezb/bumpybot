@@ -33,7 +33,8 @@ you may need to make sure you install the following for your particular
 ```
 sudo apt-get install ros-<distro>-gazebo-ros-control ros-<distro>-effort-controllers 
 ros-<distro>-ros-controllers ros-<distro>-ros-control ros-<distro>-gazebo-ros-pkgs
-ros-<distro>-controller-manager ros-<distro>-hardware-interface ros-<distro>-soem
+ros-<distro>-controller-manager ros-<distro>-hardware-interface ros-<distro>-soem ros-<distro>-rosparam-shortcuts
+
 ```
 
 
