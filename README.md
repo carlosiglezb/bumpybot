@@ -44,15 +44,16 @@ ROS 1. To build, clone this repository into your catkin workspace and make
 sure all submodules are on the main branch:
 
 ```
-~ $ cd catkin_ws
-~/catkin_ws $ git clone --recurse-submodules https://github.com/carlosiglezb/bumpybot.git src
-~/catkin_ws $ cd src && git submodule foreach 'git checkout main'
+cd catkin_ws
+git clone --recurse-submodules https://github.com/carlosiglezb/bumpybot.git src
+cd src && git submodule foreach 'git checkout main'
 ```
 
 and then build, either with catkin_make or catkin tools, e.g,
 
 ```
-~/catkin_ws $ catkin_make  
+cd ~/catkin_ws
+catkin_make  
 ```
 
 Lastly, don't forget to source:
@@ -83,13 +84,12 @@ For ethernet connection, you need to confguire your IPv4 addressess to be in the
 
 
 ### Wireless Connection: bumpybot WiFi (Default)
-When BumpyBot computer turn on, it hosts WiFi by default
-Connect by command: `ssh hcrl-bumpybot@10.42.0.1`
+When BumpyBot computer turn on, it hosts an access point `bumpybot` by default
+Connect via ssh command: `ssh hcrl-bumpybot@10.42.0.1`
 
-If bumpybot wifi is not published, run `sudo hotspot_mode.sh`
+If `bumpybot` wifi ssid isn't being advertised, run `sudo hotspot_mode.sh` (or reboot BumbyBot if you don't already have terminal access)
 
 Note that BumpyBot computer may not be able to connect to the internet in this mode.
-
 
 
 
@@ -98,7 +98,7 @@ Note that BumpyBot computer may not be able to connect to the internet in this m
 On BumpyBot computer run
 `sudo wifi_mode.sh`
 
-For wireless connection, make sure to conenct your remote computer to the hcrlab2 wireless network.
+For wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
 
