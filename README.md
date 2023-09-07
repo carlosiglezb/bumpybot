@@ -78,10 +78,28 @@ You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 ## Robot Connection
 You can access the BumpyBot computer through SSH either from ethernet or WiFi.
 
+### Ethernet Connection
 For ethernet connection, you need to confguire your IPv4 addressess to be in the same subnet as the robot.
+
+
+### Wireless Connection: bumpybot WiFi (Default)
+When BumpyBot computer turn on, it hosts WiFi by default
+Connect by command: `ssh hcrl-bumpybot@10.42.0.1`
+
+If bumpybot wifi is not published, run `sudo hotspot_mode.sh`
+
+Note that BumpyBot computer may not be able to connect to the internet in this mode.
+
+### Wireless Connection: hcrlab2 WiFi
+
+On BumpyBot computer run
+`sudo wifi_mode.sh`
 
 For wireless connection, make sure to conenct your remote computer to the hcrlab2 wireless network.
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
+
+
+### 
 
 ## ROS Network Setup
 If you are hosting `roscore` on you remote computer, you need to set the ROS_MASTER_URI on both your remote computer and the BumpyBot computer.
@@ -109,6 +127,9 @@ Slave 1 State=  12 StatusCode=  24 : Invalid input mapping`
 ```
 
 Kill the process by `ctrl-C` and relaunch it.
+
+## Launch Camera
+`roslaunch azure_kinect_ros`
 
 ## Robot Manual Control
 
