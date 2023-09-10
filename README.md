@@ -79,7 +79,11 @@ For a wireless connection, make sure to connect your remote computer to the hcrl
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
 ## Robot Connection
-You can access the BumpyBot computer through SSH either from ethernet or WiFi.
+You can access the BumpyBot computer wirelessly/wired via SSH or via NoMachine Remote Desktop
+
+### Remote Desktop
+
+[Click here for instructions on setting up and using NoMachine for a remote desktop environment.](nomachine_instructions.md)
 
 ### Ethernet Connection
 For an ethernet connection, you need to confirm your IPv4 addresses to be in the same subnet as the robot.
@@ -100,10 +104,10 @@ Note that BumpyBot computer may not be able to connect to the internet in this m
 On BumpyBot computer run
 `sudo wifi_mode.sh`
 
-For wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
+For a wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.50.35`
 
-This will disable hotspot if already running.
+This will disable the hotspot if already running.
 
 
 ### Camera Launch
@@ -134,7 +138,7 @@ sudo su
 ```
 This command will log you into root with the root environment. This is necessary to run the motors
 
-In the root enviroment, ROS packages may not be located automatically, access to the `bumpybot_hardward_interface` by following command
+In the root environment, ROS packages may not be located automatically, access to the `bumpybot_hardward_interface` by the following command
 ```
 cd ~/bumpybot_ws/src/bumpybot_hardware_interface/launch
 ```
@@ -168,7 +172,7 @@ To control the robot with RViz Teleop Gui, run the following command
 ```
 roslaunch trikey_base_controller trikey_base_controller.launch xbox:=false
 ```
-You can send velocity commands by gui.
+You can send velocity commands by GUI.
 
 
 <!-- This can be used to command linear and angular velocities (e.g., through `cmd_vel`) 
