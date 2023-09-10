@@ -12,7 +12,8 @@ Ensure you are connected either to `bumpybot` AP when in Hotspot mode (default) 
 When opening NoMachine, you should see all the available NoMachine servers on your network as well as any past connections you have saved. Choose the connection labeled: "bumpybot, Ubuntu 18.04.4 LTS" and enter the user `hcrl-bumpybot` and password as prompted.
 
 
-![click on bumpybot](bumpybot\NoMachine Instructions_1.png)
+<img src="nomachine_instructions.png " width="650">
+
 
 Upon connection, you may be prompted with: “Cannot detect any display running. Do you want NoMachine to create a new display and proceed to connect to the desktop?” 
 
