@@ -140,7 +140,7 @@ This command will log you into root with the root environment. This is necessary
 
 In the root environment, ROS packages may not be located automatically, access to the `bumpybot_hardward_interface` by the following command
 ```
-cd ~/bumpybot_ws/src/bumpybot_hardware_interface/launch
+cd /home/hcrl-bumpybot/bumpybot_ws/src/bumpybot_hardware_interface/launch
 ```
 Then run the following command to launch the robot
 ```
