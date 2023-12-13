@@ -255,7 +255,7 @@ to check it out:
 
 ``` latex
 @proceedings{bumpybot,
-    author = {Gonzalez, Carlos and Lee, Samantha and Montano, Francisco and Ortega, Steven and Kang, Dong Ho and Kim, Aaron and Jaiswal, Mehar and Jiao, Junfeng and Sentis, Luis},
+    author = {Gonzalez, Carlos and Lee, Samantha and Montano, Francisco and Ortega, Steven and Kang, Dong Ho and Jaiswal, Mehar and Jiao, Junfeng and Sentis, Luis},
     title = {Design of a Person-Carrying Robot for Contact Compliant Navigation},
     series = {International Design Engineering Technical Conferences and Computers and Information in Engineering Conference},
     year = {2023},
