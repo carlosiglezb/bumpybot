@@ -23,24 +23,45 @@ Currently, we are using the following:
 
 ![real-bumpybot-move-right](https://github.com/carlosiglezb/bumpybot/assets/97119009/00107578-1676-4b36-a3f5-226d36a4ed69)
 
-# Dependencies
-
-This stack has mostly `ros_control` dependencies. If you have already done a full ROS
-install, chances are that you have already installed most of them. If not,
-you may need to make sure you install the following for your particular
-`<distro>`:
-
-```
-sudo apt-get install ros-<distro>-gazebo-ros-control ros-<distro>-effort-controllers 
-ros-<distro>-ros-controllers ros-<distro>-ros-control ros-<distro>-gazebo-ros-pkgs
-ros-<distro>-controller-manager ros-<distro>-hardware-interface ros-<distro>-soem ros-<distro>-rosparam-shortcuts
-
-```
 
 
 # Installation
 
-This stack has been developed (and only tested) on Ubuntu 18.04 LTS and
+Install [ROS Noetic](https://wiki.ros.org/noetic/Installation/Ubuntu) for Ubuntu 20.04 (recommended)
+
+Install [ROS Melodic](https://wiki.ros.org/melodic/Installation/Ubuntu) for Ubuntu 18.04
+
+## ROS Packages Dependencies [TODO: Change into `rosdep install`]
+
+
+
+<!-- sudo rosdep init -->
+
+
+<!-- rosdep install --from-paths src --ignore-src -r -y -->
+```
+sudo apt-get install \
+    ros-$ROS_DISTRO-effort-controllers \
+    ros-$ROS_DISTRO-ros-controllers \
+    ros-$ROS_DISTRO-ros-control \
+    ros-$ROS_DISTRO-controller-manager \
+    ros-$ROS_DISTRO-gazebo-ros-pkgs \
+    ros-$ROS_DISTRO-gazebo-ros-control \
+    ros-$ROS_DISTRO-hardware-interface \
+    ros-$ROS_DISTRO-soem \
+    ros-$ROS_DISTRO-rosparam-shortcuts \
+    ros-$ROS_DISTRO-joint-state-publisher-gui \
+    ros-$ROS_DISTRO-teleop-twist-keyboard \
+    ros-$ROS_DISTRO-slam-toolbox \
+    ros-$ROS_DISTRO-navigation \
+    ros-$ROS_DISTRO-teb-local-planner \
+    ros-$ROS_DISTRO-rtabmap-ros \
+    python3-rosdep
+
+```
+
+
+This stack has been developed (and only tested) on Ubuntu 18.04 LTS & Ubuntu 20.04 and
 ROS 1. To build, clone this repository into your catkin workspace and make
 sure all submodules are on the main branch:
 
@@ -188,7 +209,7 @@ provided [RViz plugin](https://github.com/carlosiglezb/bumpybot_teleop).  -->
 Install the package through
 
 ```
-sudo apt-get install ros-<distro>-teleop-twist-keyboard
+sudo apt-get install ros-$ROS_DISTRO-teleop-twist-keyboard
 ```
 
 Then, on one terminal window run
