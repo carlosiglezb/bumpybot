@@ -112,7 +112,7 @@ For an ethernet connection, you need to confirm your IPv4 addresses to be in the
 
 ### Wireless Connection: bumpybot WiFi (Default)
 When BumpyBot computer turn on, it hosts an access point `bumpybot` by default
-Connect via ssh command: `ssh hcrl-bumpybot@10.42.0.99`
+Connect via ssh command: `ssh hcrl-bumpybot@10.42.99.99`
 
 If `bumpybot` wifi ssid isn't being advertised, run `sudo hotspot_mode.sh` (or reboot BumbyBot if you don't already have terminal access). note that the `wifi_mode.sh` and `hotspot_mode.sh` scripts live in `/usr/local/bin/`.
 
