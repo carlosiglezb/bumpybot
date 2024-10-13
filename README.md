@@ -153,11 +153,12 @@ sudo ip route add 10.42.0.0/24 via $BB_IP dev $WIFI_IFACE # Adds route to 10.42.
 ```
 
 This will allow your remote computer to **directly*** interface with the 10.42.0.0/24 ethernet subnet between Bumpybot-Upboard and Bumpybot-Orin
-This is neccessary for ROS to acheive proper TCP communication between all three computers in the system.
 
 You can test if you are successful by pinging *both* `10.42.0.1` and `10.42.0.71`. 
 If you cannot ping either of those two from the remote computer, [please refer to the networking documentation](Network.md).
 
+
+###### *This will indirectly route all traffic from bumpybot-orin 10.42.0.71 to the remote computer via bumpybot-upboard's wifi connection, but this will happen in the background, ROS will be able to make TCP calls *as if* there was a direct connection 
 
 
 
