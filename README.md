@@ -99,37 +99,77 @@ Set up your network settings to connect to the robot.
 For a wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
 You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
 
-## Robot Connection
-You can access the BumpyBot computer wirelessly/wired via SSH or via NoMachine Remote Desktop
+## Network Setup 
+
+#### [Click here for documentation on the current networking scheme](Network.md)
+<img src="https://raw.githubusercontent.com/carlosiglezb/bumpybot/refs/heads/Jetson-Orin-Nano-Secondary-Computer/Bumpybot_Networking.drawio.png" width="660">
+
+The above diagram shows the setup when using hcrlab2 wifi network.
+
+### Hotspot Mode (Default)
+When BumpyBot-Upboard computer boots, it hosts an access point `bumpybot` by default
+Connect via ssh:
+```bash
+ssh bumpybot-hotspot #assumes ssh hosts are setup on remote computer
+#or
+ssh hcrl-bumpybot@10.42.99.99
+``` 
+
+If `bumpybot` wifi ssid isn't being advertised, run `sudo hotspot_mode.sh` (or reboot BumbyBot if you don't already have terminal access). Note that the `wifi_mode.sh` and `hotspot_mode.sh` scripts found in this repository should be placed in `/usr/local/bin/` of bumpybot-upboard.
+
+Note that BumpyBot computer may not be able to connect to the internet in this mode.
+
+
+### Wifi Mode (hcrlab2 connection)
+Firstly, the `wifi_mode.sh` and `hotspot_mode.sh` scripts found in this repository should be placed in `/usr/local/bin/` of bumpybot-upboard.
+
+To connect bumpybot-upboard to the hcrlab2 wifi, run the following:
+`sudo wifi_mode.sh`
+The ssh session will hang as the 'bumpybot' wifi network no longer exists, you can either close that terminal window or press the following key-sequence: [Return], [~], [.]
+
+Now be sure the remote computer is connected to hcrlab2.
+
+Connect via ssh:
+```bash
+ssh 192.168.50.35 #assumes ssh hosts are setup on remote computer
+#or
+ssh hcrl-bumpybot@192.168.50.35
+``` 
+
+
+### Ensuring Correct Routing on Remote Computer
+
+While your remote computer is connected to the `bumpybot` hotspot or to `hcrlab2` (if Bumpybot-upboard is in wifi mode),
+Open a new ***local*** session & run the following:
+
+```bash
+export BB_IP=10.42.99.99 # If on bumpybot hotspot
+# OR
+export BB_IP=192.168.50.35 # If on hcrlab2
+
+export WIFI_IFACE='wlx1cbfceef0aaa' #Replace with correct wifi interface device for your remote computer
+
+sudo ip route add 10.42.0.0/24 via $BB_IP dev $WIFI_IFACE # Adds route to 10.42.0.0/24 network via BB_IP.
+```
+
+This will allow your remote computer to **directly*** interface with the 10.42.0.0/24 ethernet subnet between Bumpybot-Upboard and Bumpybot-Orin
+This is neccessary for ROS to acheive proper TCP communication between all three computers in the system.
+
+You can test if you are successful by pinging *both* `10.42.0.1` and `10.42.0.71`. 
+If you cannot ping either of those two from the remote computer, [please refer to the networking documentation](Network.md).
+
+
+
 
 ### Remote Desktop
 
 [Click here for instructions on setting up and using NoMachine for a remote desktop environment.](nomachine_instructions.md)
 
-### Ethernet Connection
-For an ethernet connection, you need to confirm your IPv4 addresses to be in the same subnet as the robot.
+## ROS
 
-
-### Wireless Connection: bumpybot WiFi (Default)
-When BumpyBot computer turn on, it hosts an access point `bumpybot` by default
-Connect via ssh command: `ssh hcrl-bumpybot@10.42.0.1`
-
-If `bumpybot` wifi ssid isn't being advertised, run `sudo hotspot_mode.sh` (or reboot BumbyBot if you don't already have terminal access). note that the `wifi_mode.sh` and `hotspot_mode.sh` scripts live in `/usr/local/bin/`.
-
-Note that BumpyBot computer may not be able to connect to the internet in this mode.
-
-
-
-### Wireless Connection via hcrlab2 WiFi network
-
-On BumpyBot computer run
-`sudo wifi_mode.sh`
-
-For a wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
-You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.50.35`
-
-This will disable the hotspot if already running.
-
+## ROS Network Setup
+If you are hosting `roscore` on you remote computer, you need to set the ROS_MASTER_URI on both your remote computer and the BumpyBot computer.
+This configuration can be set in the `.bashrc` file.
 
 ### Camera Launch
 To launch the camera, run the following command on the BumpyBot computer (No sudo su)
@@ -148,9 +188,6 @@ roslaunch bumpyboy_navigation depth_nav.launch
 ```
 
 
-## ROS Network Setup
-If you are hosting `roscore` on you remote computer, you need to set the ROS_MASTER_URI on both your remote computer and the BumpyBot computer.
-This configuration can be set in the `.bashrc` file.
 
 ## Robot Launch
 In order to launch the robot, you need to run the following commands on the BumpyBot computer.
