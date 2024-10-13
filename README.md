@@ -93,12 +93,7 @@ If you intend to use the BumpyBot in Gazebo simulation,  refer to the following 
 
 ## Robot Bootup
 Turn on the switches for Battery, Logic, and Motor.
-If the local computer is not turned on, manually boot up the computer.
-Set up your network settings to connect to the robot.
-
-For a wireless connection, make sure to connect your remote computer to the hcrlab2 wireless network.
-You may access the BumpyBot computer by `ssh hcrl-bumpybot@192.168.52.35`
-
+If the onboard computers, Bumpybot-Upboard and Bumpybot-Orin are not turned on, manually boot them via their power buttons.
 ## Network Setup 
 
 #### [Click here for documentation on the current networking scheme](Network.md)
@@ -165,6 +160,12 @@ If you cannot ping either of those two from the remote computer, [please refer t
 ### Remote Desktop
 
 [Click here for instructions on setting up and using NoMachine for a remote desktop environment.](nomachine_instructions.md)
+
+
+## Unlocking the Motors
+If you are using the wireless E-stop (the carkey-like keyfob), press the on button, you should here a small relay click, releasing the servo drivers' E-stops.
+
+Otherwise, ensure there is 5V on that line.
 
 ## ROS
 
