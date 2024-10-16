@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Needed for Azure SDK to run properly -->
+    <env name="DISPLAY" value=":0"/>
+
+    <!-- Launches the Azure kinect -->
+    <include file="$(find azure_kinect_ros_driver)/launch/driver.launch">
+        
+    </include>
+
+</launch>
