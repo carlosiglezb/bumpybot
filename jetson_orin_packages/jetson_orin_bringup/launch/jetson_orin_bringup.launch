@@ -1,11 +1,221 @@
 <?xml version="1.0"?>
 <launch>
-    <!-- Needed for Azure SDK to run properly -->
-    <env name="DISPLAY" value=":0"/>
+
+    <arg name="lidar_odom" default="true"/>
+    <arg name="depth_odom" default="true"/>
+      <arg name="cloud_only_test" value="false"/>
+      <arg name="rgbd_test" value="false"/>
+      <arg name="kinect_laser_test" value="true"/>
+    <!-- Launches the serial node to communicate with the Bumpybot Battery Monitor-->
+    <node name="serial_node" pkg="rosserial_python" type="serial_node.py" output="screen" respawn="true">
+        <param name="port" value="/dev/ttyACM0" />
+    </node>
+
+
+    <group if="$(arg lidar_odom)">
+        <!-- Load lidar -->
+        <include file="$(find rplidar_ros)/launch/rplidar.launch"/>
+        <!-- Lidar Odom -->
+            <group>
+            <include file="$(find bumpybot_navigation)/launch/icp_odom.launch">
+                <arg name="filter" value="true"/>
+                <remap from="/scan" to="/merged_scan"/>
+                <arg name ="rviz" value="false"/>
+            </include>
+            </group>
+    </group>
+
 
     <!-- Launches the Azure kinect -->
+
+    <group if="$(arg depth_odom)">
+
+        <!-- Needed for Azure SDK to run properly -->
+        <env name="DISPLAY" value=":0"/>
+
+        <!-- Load the depth_nav.launch file -->
+        <!-- <include file="$(find bumpybot_navigation)/launch/depth_nav.launch">
+            <arg name="depth_registration" value="true"/>
+            <arg name="nodelets" value="true"/>
+        </include> -->
+
+        <!-- <include file="$(find azure_kinect_ros_driver)/launch/driver.launch"> -->
+        <!-- </include> -->
+
+    <!-- <node pkg="rtabmap_odom" type="icp_odometry" name="icp_odometry_cloud"> -->
+      <!-- <remap from="odom" to="odom"/>  -->
+      <!-- ROSTOPIC: /odom => /odom_icp -->
+      <!-- <param name="frame_id" value="base_link"/> -->
+      <!-- <param name="publish_tf" value="true"/> -->
+      <!-- <remap from="scan_cloud" to="points2"/> -->
+      <!-- <remap from="scan" to="dummyscan"/> -->
+      <!-- <param name="publish_null_when_lost" value="false"/> -->
+      <!-- <param name="deskewing" value="true"/> -->
+      <!-- <param name="scan_voxel_size" value="0.05"/> -->
+    <!-- </node> -->
+
+
     <include file="$(find azure_kinect_ros_driver)/launch/driver.launch">
-        
+       <arg name="point_cloud" value="true"/>
+       <arg name="rgb_point_cloud" value="false"/>
+       <arg name="fps" value="15"/>
     </include>
+  
+    <group if="$(arg cloud_only_test)" ns="rtabmap">
+         <arg name="rtabmap_viz"    default="false"/>
+
+      <node pkg="nodelet" type="nodelet" name="points_xyz" args="standalone rtabmap_util/point_cloud_xyz" output="screen">
+        <remap from="depth/image"       to="/depth_to_rgb/image_raw"/>
+        <remap from="depth/camera_info" to="/depth_to_rgb/camera_info"/>
+        <remap from="cloud"             to="voxel_cloud" />
+
+        <param name="decimation"  type="double" value="4"/>
+        <param name="scan_voxel_size"  type="double" value="0.0025"/>
+        <param name="max_depth"   type="double" value="7"/>
+        <param name="scan_normal_k"    type="int"    value="10"/>
+        <param name="approx_sync" type="bool"   value="false"/>
+      </node>
+
+
+
+
+      <node pkg="rtabmap_odom" type="icp_odometry" name="icp_odometry" output="screen">
+        <remap from="scan_cloud" to="voxel_cloud"/>
+        <param name="frame_id" type="string" value="base_link"/>
+        <remap from="odom" to="odom"/> 
+        <param name="publish_tf" value="true"/> 
+        <remap from="/imu"  to="imu"/>
+
+
+        <!-- ICP parameters -->
+        <param name="Icp/PointToPlane"        type="string" value="true"/>
+        <param name="Icp/PM"                  type="string" value="true"/>
+        <param name="Icp/PMOutlierRatio"      type="string" value="0.7"/>
+
+        <!-- Odom parameters -->
+        <param name="OdomF2M/ScanSubtractRadius" type="string" value="0.05"/>
+        <param name="OdomF2M/ScanMaxSize"        type="string" value="5000"/>
+        <param name="Odom/ScanKeyFrameThr"       type="string" value="0.5"/>
+      </node>
+
+      <node pkg="rtabmap_slam" type="rtabmap" name="rtabmap" output="screen" args="-d">
+        <param name="frame_id"             type="string" value="base_link"/>
+        <param name="subscribe_depth"      type="bool" value="false"/>
+        <param name="subscribe_rgb"        type="bool" value="false"/>
+        <param name="subscribe_scan_cloud" type="bool" value="true"/>
+        <param name="approx_sync"          type="bool" value="false"/>
+
+        <remap from="scan_cloud" to="voxel_cloud"/>
+
+        <param name="RGBD/ProximityPathMaxNeighbors" type="string" value="0"/>
+        <param name="RGBD/ProximityOdomGuess"        type="string" value="true"/>
+
+        <!-- ICP parameters -->
+        <param name="Icp/PointToPlane"        type="string" value="true"/>
+        <param name="Icp/PM"                  type="string" value="true"/>
+        <param name="Icp/PMOutlierRatio"      type="string" value="0.7"/>
+        <param name="Icp/MaxTranslation"      type="string" value="0.5"/>
+      </node>
+
+      <node if="$(arg rtabmap_viz)" name="rtabmap_viz" pkg="rtabmap_viz" type="rtabmap_viz" output="screen">
+        <param name="frame_id" type="string" value="base_link"/>
+        <param name="subscribe_rgb" type="bool" value="false"/>
+        <param name="subscribe_depth" type="bool" value="false"/>
+        <param name="subscribe_odom_info" type="bool" value="true"/>
+        <param name="subscribe_scan_cloud" type="bool" value="true"/>
+        <param name="approx_sync" type="bool" value="false"/>
+        <remap from="scan_cloud" to="voxel_cloud"/>
+      </node>
+
+  </group>
+
+<group if="$(arg rgbd_test)" ns="camera">
+      <node pkg="nodelet" type="nodelet" name="camera_nodelet_manager" args="manager" output="screen"/>
+
+        <node pkg="nodelet" type="nodelet" name="rgbd_sync" args="load rtabmap_sync/rgbd_sync camera_nodelet_manager" output="screen">
+    <!-- <remap from="rgb/image" to="/rgb/image_raw"/> -->
+    <remap from="rgb/image" to="/rgb/image_raw"/>
+
+      <remap from="depth/image" to="/depth_to_rgb/image_raw"/>
+      <remap from="rgb/camera_info" to="/rgb/camera_info"/>
+      <!-- <remap from="rgbd_image" to="/camera/rgbd_image"/> -->
+          <!-- <param name="compressed_rate" value="$(arg compressed_rate)"/> -->
+        </node>
+      </group>
+
+        <group if="$(arg rgbd_test)" ns="rtabmap">
+          <arg name="compressed" value="false"/>
+
+
+        <!-- RGB-D Odometry -->
+        <node pkg="rtabmap_odom" type="rgbd_odometry" name="rgbd_odometry" output="screen">
+          <param name="subscribe_rgbd"       type="bool"   value="true"/>
+          <remap     if="$(arg compressed)"    from="rgbd_image"   to="/camera/rgbd_image/compressed"/>
+        <remap unless="$(arg compressed)"    from="rgbd_image"   to="/camera/rgbd_image"/>
+              <remap from="depth/image"       to="/depth_to_rgb/image_raw"/>
+            <remap from="depth/camera_info" to="/depth_to_rgb/camera_info"/>
+            <remap from="cloud"             to="voxel_cloud" />
+        <param name="Odom/AlignWithGround"  type="string" value="true"/>
+          <param name="frame_id"         type="string" value="base_link"/>
+          <remap from="odom" to="odom"/> 
+          <param name="publish_tf" value="true"/> 
+            <remap from="imu" to="/rtabmap/imu_filtered"/>
+        </node>
+
+        <node name="rtabmap" pkg="rtabmap_slam" type="rtabmap" output="screen" >
+          <param name="subscribe_depth"       type="bool"   value="false"/>
+          <param name="subscribe_rgbd"       type="bool"   value="true"/>
+          <param name="frame_id"             type="string" value="base_link"/>
+          <param name="approx_sync"          type="string" value="true"/>
+          <param name="odom_sensor_sync" type="bool" value="true"/>
+          <remap     if="$(arg compressed)"    from="rgbd_image"   to="/camera/rgbd_image/compressed"/>
+          <remap unless="$(arg compressed)"    from="rgbd_image"   to="/camera/rgbd_image"/>
+          <remap from="imu" to="/rtabmap/imu_filtered"/>
+        </node>
+        <!-- IMU Filter Madgwick Node -->
+        <node name="imu_filter_madgwick" pkg="imu_filter_madgwick" type="imu_filter_node" output="screen">
+          <param name="use_magnetic_field" type="bool" value="true"/>
+          <param name="world_frame" type="string" value="enu"/>
+          <param name="publish_tf" type="bool" value="true"/>
+          <remap from="imu/data_raw" to="/imu"/>
+          <remap from="imu/data" to="/rtabmap/imu_filtered"/>
+        </node>
+
+      </group>
+
+
+</group>
+
+<group if="$(arg kinect_laser_test)">
+
+
+  <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan_camera">
+    <rosparam command="load" file="$(find jetson_orin_bringup)/config/bumpyBotCameraToScan.yaml" />
+    <remap from="scan" to="camera_lazer"/>
+	  <remap from="cloud_in" to="/points2"/>
+  </node>
+
+    <node pkg="ira_laser_tools" type="laserscan_multi_merger" name="laser_merger" output="screen">
+    <!-- Input laser scan topics -->
+    <param name="laserscan_topics" value="/camera_lazer /scan"/>
+    <!-- Output laser scan topic -->
+    <param name="destination_frame" value="lidar_link"/>
+    <param name="scan_destination_topic" value="/merged_scan"/>
+    <param name ="angle_min" value="-3.14159"/>
+    <param name ="angle_max" value="3.14159"/>
+    <!-- TODO Make a yaml for this node's params -->
+
+
+
+
+
+  </node>
+
+
+
+
+</group>
+
+
 
 </launch>
