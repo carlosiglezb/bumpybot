@@ -1,6 +1,6 @@
 #!/bin/bash
-# Run this script with sudo privileges
-# Place script in /usr/local/bin
+# Place this file in /usr/local/bin/
+# Run with sudo
 
 # Exit immediately if a command exits with a non-zero status
 set -e
@@ -221,7 +221,7 @@ esac
 
 # Wait for connection
 echo "Waiting for the connection to establish..."
-sleep 3
+sleep 7
 
 # Verify connection
 if nmcli -t -f active,ssid dev wifi | grep -q "^yes:$SELECTED_NETWORK$"; then
@@ -240,72 +240,70 @@ sudo sysctl -w net.ipv4.ip_forward=1
 
 echo "Configuring iptables rules..."
 echo "Adjusting interface names as per your system..."
-# Get the Wi-Fi interface
 WIFI_INTERFACE=$(nmcli device status | grep -i wifi | awk '{print $1}')
-# Explicitly select the eno1 Ethernet interface
-LAN_INTERFACE="eno1"
+LAN_INTERFACE=$(nmcli device status | grep -E "ethernet|wired" | awk '{print $1}')
 echo "Detected Wi-Fi interface: $WIFI_INTERFACE"
-echo "Using LAN interface: $LAN_INTERFACE (eno1)"
+echo "Detected LAN interface: $LAN_INTERFACE"
 
 echo "Setting up iptables rules..."
 
-echo "> Flushing existing iptables rules"
-echo "$ sudo iptables -F"
+echo "Flushing existing iptables rules..."
+echo "> sudo iptables -F"
 sudo iptables -F
-echo "$ sudo iptables -t nat -F"
+echo "> sudo iptables -t nat -F"
 sudo iptables -t nat -F
 
-echo "> Allowing forwarding from Wi-Fi ($WIFI_INTERFACE) to LAN ($LAN_INTERFACE)"
-echo "$ sudo iptables -A FORWARD -i $WIFI_INTERFACE -o $LAN_INTERFACE -j ACCEPT"
+echo "Allowing forwarding from Wi-Fi ($WIFI_INTERFACE) to LAN ($LAN_INTERFACE)..."
+echo "> sudo iptables -A FORWARD -i $WIFI_INTERFACE -o $LAN_INTERFACE -j ACCEPT"
 sudo iptables -A FORWARD -i "$WIFI_INTERFACE" -o "$LAN_INTERFACE" -j ACCEPT
 
-echo "> Allowing forwarding from LAN ($LAN_INTERFACE) to Wi-Fi ($WIFI_INTERFACE)"
-echo "$ sudo iptables -A FORWARD -i $LAN_INTERFACE -o $WIFI_INTERFACE -j ACCEPT"
+echo "Allowing forwarding from LAN ($LAN_INTERFACE) to Wi-Fi ($WIFI_INTERFACE)..."
+echo "> sudo iptables -A FORWARD -i $LAN_INTERFACE -o $WIFI_INTERFACE -j ACCEPT"
 sudo iptables -A FORWARD -i "$LAN_INTERFACE" -o "$WIFI_INTERFACE" -j ACCEPT
 
-echo "> Setting up NAT (masquerade) on Wi-Fi interface ($WIFI_INTERFACE)"
-echo "$ sudo iptables -t nat -A POSTROUTING -o $WIFI_INTERFACE -j MASQUERADE"
+echo "Setting up NAT (masquerade) on Wi-Fi interface ($WIFI_INTERFACE)..."
+echo "> sudo iptables -t nat -A POSTROUTING -o $WIFI_INTERFACE -j MASQUERADE"
 sudo iptables -t nat -A POSTROUTING -o "$WIFI_INTERFACE" -j MASQUERADE
 
-echo "> Saving iptables rules"
-echo "$ sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null"
+echo "Saving iptables rules..."
+echo "> sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null"
 sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null
 
-echo "> Getting the correct gateway IP for the Wi-Fi interface ($WIFI_INTERFACE)"
-GATEWAY_IP=$(ip route show default dev "$WIFI_INTERFACE" | awk '{print $3}')
-echo "Detected Wi-Fi gateway IP: $GATEWAY_IP"
-
-echo "> Removing incorrect default routes on the LAN interface ($LAN_INTERFACE) if any"
-echo "$ sudo ip route del default via $GATEWAY_IP dev $LAN_INTERFACE 2>/dev/null || true"
-sudo ip route del default via "$GATEWAY_IP" dev "$LAN_INTERFACE" 2>/dev/null || true
-
-echo "$ sudo ip route del $GATEWAY_IP dev $LAN_INTERFACE 2>/dev/null || true"
-sudo ip route del "$GATEWAY_IP" dev "$LAN_INTERFACE" 2>/dev/null || true
-
-# Validate that the necessary info is found
-if [ -z "$WIFI_INTERFACE" ] || [ -z "$GATEWAY_IP" ]; then
-    echo "Error: Wi-Fi interface or gateway IP not found. Exiting..."
+# Identify the Wi-Fi interface
+WIFI_INTERFACE=$(nmcli device status | grep -i wifi | awk '{print $1}')
+if [ -z "$WIFI_INTERFACE" ]; then
+    echo "Could not identify a Wi-Fi interface. Exiting."
     exit 1
 fi
 
-echo "> Looking for and deleting all default routes except 'default via $GATEWAY_IP dev $WIFI_INTERFACE'..."
+# Identify the gateway IP for the Wi-Fi interface
+GATEWAY_IP=$(ip route show default dev "$WIFI_INTERFACE" | awk '/default via/ {print $3; exit}')
 
-# Get all current default routes across all interfaces
-DEFAULT_ROUTES=$(ip route show default)
+echo "Detected Wi-Fi interface: $WIFI_INTERFACE"
+echo "Detected Wi-Fi gateway IP: $GATEWAY_IP"
 
-# Iterate through each default route and check if it should be removed
-echo "$DEFAULT_ROUTES" | while read -r route; do
-    # Extract the route's gateway and interface
-    CURRENT_GATEWAY=$(echo "$route" | awk '{print $3}')
-    CURRENT_INTERFACE=$(echo "$route" | awk '{print $5}')
-    
-    # Check if this route matches the correct Wi-Fi route
-    if [[ "$CURRENT_GATEWAY" == "$GATEWAY_IP" && "$CURRENT_INTERFACE" == "$WIFI_INTERFACE" ]]; then
-        echo "> Preserving route: $route"
-    else
-        echo "> Deleting route: $route"
-        sudo ip route del $route 2>/dev/null || true
-    fi
+# Identify all LAN/wired interfaces
+LAN_INTERFACES=$(nmcli device status | grep -E "ethernet|wired" | awk '{print $1}')
+
+# 1) Remove ALL default routes from LAN interfaces
+for lan_iface in $LAN_INTERFACES; do
+    echo "Removing default routes on $lan_iface ..."
+    while IFS= read -r route_line; do
+        echo "    ip route del $route_line"
+        sudo ip route del $route_line
+    done < <(ip route show dev "$lan_iface" | grep '^default')
 done
 
+# 2) Remove any duplicate/extra default routes on the Wi-Fi interface
+echo "Removing extra default routes on $WIFI_INTERFACE that do not match $GATEWAY_IP ..."
+while IFS= read -r route_line; do
+    route_gateway=$(echo "$route_line" | awk '{print $3}')
+    if [[ "$route_gateway" != "$GATEWAY_IP" ]]; then
+        echo "    ip route del $route_line"
+        sudo ip route del $route_line
+    fi
+done < <(ip route show dev "$WIFI_INTERFACE" | grep '^default')
+
 echo "Wi-Fi network switch completed successfully."
+
+
