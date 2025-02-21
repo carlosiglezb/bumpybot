@@ -1,0 +1,11 @@
+<launch>
+
+    <node pkg="bumpybot_torque_contact" type="torque_data_filter.py" name="torque_data_filter">
+    </node>
+    <node pkg="bumpybot_torque_contact" type="trikey_jacobian.py" name="trikey_jacobian">
+    </node>
+
+    
+
+
+</launch>
