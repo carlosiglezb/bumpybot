@@ -19,3 +19,6 @@
 [submodule "bumpybot_navigation"]
 	path = bumpybot_navigation
 	url = https://github.com/dokkev/bumpybot_navigation.git
+[submodule "external/vectornav"]
+	path = external/vectornav
+	url = https://github.com/dawonn/vectornav
