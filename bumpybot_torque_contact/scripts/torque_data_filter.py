@@ -11,15 +11,18 @@ from bumpybot_torque_contact.cfg import TorqueDataFilterConfig
 class TorqueDataFilter:
     def __init__(self):
         rospy.init_node('torque_data_filter', anonymous=True)
+        while rospy.Time.now().to_sec() == 0:
+            rospy.loginfo("Torque Filter: Waiting for /clock to start...")
+            rospy.sleep(0.1)
 
         self.offset_buffers = {}
         self.offsets = {}
         self.offset_window_duration = rospy.get_param('~offset_window_duration', 10.0)
-
+        
         self.torque_scalars = {
-            'wheel0_joint': rospy.get_param('~wheel0_torque_scalar', 2.0),
-            'wheel1_joint': rospy.get_param('~wheel1_torque_scalar', 2.0),
-            'wheel2_joint': rospy.get_param('~wheel2_torque_scalar', 2.0)
+            'wheel0_joint': rospy.get_param('~wheel0_torque_scalar', 1000.0),
+            'wheel1_joint': rospy.get_param('~wheel1_torque_scalar', 1000.0),
+            'wheel2_joint': rospy.get_param('~wheel2_torque_scalar', 1000.0)
         }
 
         self.filtered_pub = rospy.Publisher('/filtered_torque_data', JointState, queue_size=1)

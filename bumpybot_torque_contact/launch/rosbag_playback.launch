@@ -1,0 +1,17 @@
+<launch> 
+    <param name="use_sim_time" value="true"/>
+    <param name="robot_description"
+       command="$(find xacro)/xacro --inorder '$(find trikey_description)/urdf/urdf_generator/robot.urdf.xacro'"/>
+    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+    <param name="use_tf_static" value="true"/>
+    </node>    
+
+    <include file="$(find vectornav)/launch/odom_from_rosbag.launch"/>
+
+    <node name="torque_data_filter" pkg="bumpybot_torque_contact" type="torque_data_filter.py" output="screen"/>
+
+    <node name="trikey_jacobian" pkg="bumpybot_torque_contact" type="trikey_jacobian.py" output="screen"/>
+
+    <node name="force_mag_angle" pkg="bumpybot_torque_contact" type="force_mag_angle.py" output="screen"/>
+
+</launch>

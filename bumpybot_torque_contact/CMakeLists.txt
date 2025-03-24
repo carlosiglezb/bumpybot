@@ -170,6 +170,7 @@ catkin_install_python(PROGRAMS
   scripts/torque_data_filter.py
   scripts/static_test_datalog.py
   scripts/trikey_jacobian.py
+  scripts/force_mag_angle.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
