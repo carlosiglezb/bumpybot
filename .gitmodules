@@ -22,3 +22,6 @@
 [submodule "external/vectornav"]
 	path = external/vectornav
 	url = https://github.com/dawonn/vectornav
+[submodule "stim300-driver"]
+	path = stim300-driver
+	url = https://github.com/4jakers18/stim300-driver
