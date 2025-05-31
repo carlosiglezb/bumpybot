@@ -14,13 +14,13 @@ from std_msgs.msg import Float64MultiArray
 from dynamic_reconfigure.server import Server
 from bumpybot_torque_contact.cfg import JacobianConfig
 import math
+from collections import deque
 from BBpolygons import load_BB_outline
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 class ContactJacobian():
-    def __init__(self,R, rw, rr, m, Br, outline_path=None):
+    def __init__(self,R, rw, rr, m, Br, F_MIN, outline_path=None):
         # Dynamic reconfigure
-        self.server = Server(JacobianConfig, self.dynamic_reconfig_callback)
         self.R = R
         # Basic params
         self.rw, self.rr = rw, rr
@@ -30,7 +30,8 @@ class ContactJacobian():
         L = math.sqrt(3) * self.R
         self.M_mat = np.diag([m, m, L**2/2])
         self.Ib = 0.5 * m * L**2
-
+        self.PAR_TOL = 1e-8
+        self.F_MIN = F_MIN
         # Load outline & COM
         if outline_path is None:
             pkg = rospkg.RosPack().get_path('bumpybot_torque_contact')
@@ -79,6 +80,20 @@ class ContactJacobian():
         rospy.Subscriber('/filtered_torque_data', JointState, self._health_torque_cb)
         rospy.Subscriber('/joint_states', JointState, self._health_wheel_cb)
         rospy.Timer(rospy.Duration(0.01), self._check_topic_health)
+        #  OUTLIER FILTER STATE
+        self.enable_outlier_rejection = True
+        self.outlier_threshold_ratio  = 2.0
+        self.outlier_window_size      = 5
+        self.enable_outlier_reset     = False
+
+        # keep a rolling buffer of the last N force magnitudes for median
+        self._force_mag_buffer = deque(maxlen=self.outlier_window_size)
+
+        # store last “valid” [cx, cy, Fx, Fy] in case of reset
+        self._last_valid_output = (self.com[0], self.com[1], 0.0, 0.0)
+        self.server = Server(JacobianConfig, self.dynamic_reconfig_callback)
+
+
 
     def dynamic_reconfig_callback(self, config, level):
         self.m     = config.mass
@@ -89,7 +104,63 @@ class ContactJacobian():
         L = math.sqrt(3) * self.R
         self.M_mat = np.diag([self.m, self.m, L**2/2])
         self.Ib    = 0.5 * self.m * L**2
+        self.enable_outlier_rejection = config.enable_outlier_rejection
+        self.outlier_threshold_ratio  = config.outlier_threshold_ratio
+        self.outlier_window_size      = config.outlier_window_size
+        self.enable_outlier_reset     = config.enable_outlier_reset
+
+        # if window size changed, rebuild buffer
+        if len(self._force_mag_buffer) != self.outlier_window_size:
+            self._force_mag_buffer = deque(maxlen=self.outlier_window_size)
         return config
+    def _apply_outlier_filter(self, cx, cy, Fx, Fy):
+        """
+        Returns (filtered_cx, filtered_cy, filtered_Fx, filtered_Fy, is_outlier_flag)
+        - If enable_outlier_rejection=False, simply returns inputs, False.
+        - Otherwise, compare current |F| to median(|F_last|). If |F| > ratio*median,
+          mark as outlier. Depending on enable_outlier_reset, either revert to last valid
+          or just pass raw but flag it.
+        """
+        current_mag = math.hypot(Fx, Fy)
+
+        if not self.enable_outlier_rejection:
+            # always accept
+            self._force_mag_buffer.append(current_mag)
+            self._last_valid_output = (cx, cy, Fx, Fy)
+            return cx, cy, Fx, Fy, False
+
+        # 1) update buffer if non‐zero
+        if current_mag > 0:
+            self._force_mag_buffer.append(current_mag)
+
+        # 2) compute median of buffer (if buffer not empty)
+        if len(self._force_mag_buffer) < 1:
+            median_mag = 0.0
+        else:
+            sorted_buf = sorted(self._force_mag_buffer)
+            mid = len(sorted_buf) // 2
+            if len(sorted_buf) % 2 == 1:
+                median_mag = sorted_buf[mid]
+            else:
+                median_mag = 0.5 * (sorted_buf[mid-1] + sorted_buf[mid])
+
+        # 3) decide if outlier
+        threshold = self.outlier_threshold_ratio * (median_mag + 1e-9)
+        is_outlier = (current_mag > threshold)
+
+        if not is_outlier:
+            # not an outlier → update last valid & return raw
+            self._last_valid_output = (cx, cy, Fx, Fy)
+            return cx, cy, Fx, Fy, False
+
+        # is an outlier: either reset to last valid or pass raw
+        if self.enable_outlier_reset:
+            # revert to last valid contact/force
+            lx, ly, lFx, lFy = self._last_valid_output
+            return lx, ly, lFx, lFy, True
+        else:
+            # still return current, but flag outlier
+            return cx, cy, Fx, Fy, True
 
     def _init_markers(self):
         self.arrow_marker = Marker(type=Marker.ARROW)
@@ -138,7 +209,13 @@ class ContactJacobian():
 
         # Build Jacobians & compute forces
         self.build_jacobians(self.theta)
-        out = self.external_forces()
+        cx,cy,Fx,Fy,ok = self.external_forces()
+        # Apply filters
+        fcx, fcy, fFx, fFy, is_outlier = self._apply_outlier_filter(cx, cy, Fx, Fy)
+
+        # Combine the two boolean flags (“ok” from intersection, and “not an outlier”)
+        final_ok = ok and (not is_outlier)
+        out = [fcx, fcy, fFx, fFy, 1.0 if final_ok else 0.0]
         self.visualize(out)
         msg = Float64MultiArray(); msg.data = out
         self.force_pub.publish(msg)
@@ -170,33 +247,59 @@ class ContactJacobian():
         deltaT = T_noF - self.torque_sensed
         W = self.scale * (self.Jcw.T.dot(deltaT))
         Fx, Fy = W[0,0], W[1,0]
-
+        if math.hypot(Fx, Fy) < self.F_MIN:
+            return [self.last_cp[0], self.last_cp[1], Fx, Fy, 0.0]
         # moment balance
         RH = self.scale*(self.Ib*self.angular_accel_z - (self.R/self.rw)*np.sum(self.torque_sensed))
         a, b, c = Fy, -Fx, -RH
 
-        pt, ok = self.force_line_intersection(self.geom_vertices, (a,b,c))
+        pt, ok = self.force_line_intersection(self.geom_vertices, (a,b,c), (Fx, Fy))
         return [pt[0], pt[1], Fx, Fy, 1.0 if ok else 0.0]
 
-    def force_line_intersection(self, verts, abc):
-        a,b,c = abc
-        tol = 1e-8*(abs(a)+abs(b))
-        pts = []
-        for i in range(len(verts)):
-            x1,y1 = verts[i]; x2,y2 = verts[(i+1)%len(verts)]
-            dx,dy = x2-x1, y2-y1
-            denom = a*dx + b*dy
-            if abs(denom)<tol: continue
-            t = -(a*x1 + b*y1 + c)/denom
-            if 0<=t<=1:
-                pts.append((x1+t*dx, y1+t*dy))
-        if not pts:
-            return (self.last_cp, False)
-        projs = [((px-self.com[0])*a + (py-self.com[1])*b) for px,py in pts]
-        idx = int(np.argmax(projs)) if any(p>0 for p in projs) else \
-              min(range(len(pts)), key=lambda i: math.hypot(pts[i][0]-self.com[0], pts[i][1]-self.com[1]))
-        cp = pts[idx]; self.last_cp = cp
-        return (cp, True)
+    def force_line_intersection(self, verts, abc, force_xy):
+            a, b, c = abc
+            Fx, Fy = force_xy
+            
+
+            tol = self.PAR_TOL * (abs(a) + abs(b))
+            pts = []
+            
+            # Find all edge intersections -
+            for i in range(len(verts)):
+                j = (i + 1) % len(verts)  # equivalent to mod(i,M)+1 in MATLAB
+                v1 = np.array(verts[i])
+                v2 = np.array(verts[j])
+                d = v2 - v1
+                denom = a * d[0] + b * d[1]
+                
+                if abs(denom) < tol:
+                    continue
+                    
+                t = -(a * v1[0] + b * v1[1] + c) / denom
+                if 0 <= t <= 1:
+                    intersection = v1 + t * d
+                    pts.append(tuple(intersection))
+            
+
+            if not pts:
+                return (self.last_cp, False)
+            
+
+            pts_array = np.array(pts)
+            dirs = pts_array - self.com
+            projs = dirs.dot(np.array([Fx, Fy]))
+            
+            if np.any(projs > 0):
+                # pick the intersection in the half-plane the force points to
+                idx = np.argmax(projs)
+            else:
+                # if force is weirdly zero or all projections ≤0, fall back
+                dists = np.linalg.norm(dirs, axis=1)
+                idx = np.argmin(dists)
+            
+            cp = pts[idx]
+            self.last_cp = cp
+            return (cp, True)
 
     def visualize(self, data):
         cx, cy, Fx, Fy, hit = data
@@ -229,12 +332,12 @@ class ContactJacobian():
 if __name__=='__main__':
     rospy.init_node('Contact_Jacobian')
     params = {k: rospy.get_param('~'+k, v) for k,v in zip(
-        ['R','wheel_radius','roller_radius','mass','roller_damping_Br','scale'],
-        [0.248195487469,0.1,0.00918135,30,0.2,1.0]
+        ['R','wheel_radius','roller_radius','mass','roller_damping_Br', 'F_MIN','scale'],
+        [0.248195487469,0.1,0.00918135,30,0.2,0.5,1.0]
     )}
     ContactJacobian(
         params['R'],
         params['wheel_radius'], params['roller_radius'],
-        params['mass'], params['roller_damping_Br']
+        params['mass'], params['roller_damping_Br'],params['F_MIN']
     )
     rospy.spin()
