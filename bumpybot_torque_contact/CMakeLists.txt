@@ -171,6 +171,7 @@ catkin_install_python(PROGRAMS
   scripts/static_test_datalog.py
   scripts/trikey_jacobian.py
   scripts/force_mag_angle.py
+  scripts/BBpolygons.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

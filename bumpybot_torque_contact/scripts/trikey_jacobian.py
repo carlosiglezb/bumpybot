@@ -1,526 +1,240 @@
 #!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+import os
 import numpy as np
 import rospy
 import tf2_ros
+import rospkg
 from geometry_msgs.msg import Point
-from sensor_msgs.msg import JointState
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import JointState, Imu
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
-from visualization_msgs.msg import Marker, MarkerArray
+from visualization_msgs.msg import Marker
 from std_msgs.msg import Float64MultiArray
 from dynamic_reconfigure.server import Server
 from bumpybot_torque_contact.cfg import JacobianConfig
 import math
+from BBpolygons import load_BB_outline
+from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 class ContactJacobian():
-    def __init__(self, rw, rr, M, Br, Iw, Ir, Ib, TractionTorque):
-        # type: (float, float, float, float, float, float, float, float) -> None
-
-        # ---- Dynamic Reconfigure Server ----
+    def __init__(self,R, rw, rr, m, Br, outline_path=None):
+        # Dynamic reconfigure
         self.server = Server(JacobianConfig, self.dynamic_reconfig_callback)
-
-        # ---- Robot parameters ----
-        self.rw = rw
-        self.rr = rr
-        self.M  = M
-        self.Br = np.array([[Br], [Br], [Br]])  # keep as 3x1
-        self.Iw = Iw
-        self.Ir = Ir
-        self.Ib = Ib
-        self.TractionTorque = TractionTorque
+        self.R = R
+        # Basic params
+        self.rw, self.rr = rw, rr
+        self.m, self.Br = m, Br
+        self.scale = 1.0
         self.visualize_threshold = 0.025
+        L = math.sqrt(3) * self.R
+        self.M_mat = np.diag([m, m, L**2/2])
+        self.Ib = 0.5 * m * L**2
 
-        # ---- Internal state ----
-        self.theta = None  # type:float      # yaw
-        self.velocity = None  # type: np.ndarray    # vx, vy, wz
-        self.torque_sensed = None  # type: np.ndarray   # from /filtered_torque_data
-        self.Jcw = None  # type: np.ndarray
-        self.Jcwdot = None  # type: np.ndarray
-        self.Jcwinv = None  # type: np.ndarray
-        self.Jcwdot_inv = None  # type: np.ndarray
-        self.Jcr = None  # type: np.ndarray
-        self.Jcrdot = None  # type:np.ndarray
-        self.acceleration = None  # type:list
+        # Load outline & COM
+        if outline_path is None:
+            pkg = rospkg.RosPack().get_path('bumpybot_torque_contact')
+            outline_path = os.path.join(pkg, 'cfg', 'BB_outline.csv')
+        self.geom_vertices = load_BB_outline(outline_path)
+        arr = np.array(self.geom_vertices)
+        self.com = arr.mean(axis=0)
+        self.last_cp = tuple(self.com)
 
-        # Time-tracking for update loop
-        self.t_now = None  # type:float
-        self.t_last = None  # type:float
-        self.delta_t = 0.0  # type: float
+        # State vars
+        self.theta = None
+        self.wz = None
+        self.acceleration = None
+        self.angular_accel_z = None
+        self.torque_sensed = None
 
-        self.t_last_torque = None
+        # Health trackers
+        self.last_imu_msg_time = None
+        self.last_odom_msg_time = None
+        self.last_torque_msg_time = None
+        self.last_wheel_msg_time = None
 
-        # Track wheel velocities to compute \dot{\omega} from the difference
-        self.angular_vel_wheels_now = None  # type:np.ndarray  # current wheel speeds
-        self.angular_vel_wheels_prev = None  # type:np.ndarray  # previous wheel speeds
-        self.wheel_angular_acceleration = None  # type:np.ndarray
-
-
+        # Wait for clock
         while rospy.Time.now().to_sec() == 0:
-
-            rospy.loginfo("Contact Detection: Waiting for /clock to start...")
             rospy.sleep(0.1)
 
+        # Publishers
+        self.pub_sphere = rospy.Publisher('contact_point', Marker, queue_size=1)
+        self.pub_arrow  = rospy.Publisher('force_arrow', Marker, queue_size=1)
+        self.force_pub  = rospy.Publisher('external_force_values', Float64MultiArray, queue_size=1)
+        self._init_markers()
 
-        # ---- Marker Publishers ----
-        self.pub_sphere = rospy.Publisher("contact_point", Marker, queue_size=10)
-        self.pub_arrow = rospy.Publisher("force_arrow", Marker, queue_size=10)
-        self.force_value_pub = rospy.Publisher("external_force_values", Float64MultiArray, queue_size=10)
+        # Subscribers: sync sensors + health checks
+        imu_sub    = Subscriber('/imu/data', Imu)
+        odom_sub   = Subscriber('/odometry/filtered', Odometry)
+        torque_sub = Subscriber('/filtered_torque_data', JointState)
+        wheel_sub  = Subscriber('/joint_states', JointState)
 
-        #debug publisher
-        self.pub_lina = rospy.Publisher("self_acceleration", Float64MultiArray, queue_size=10)
-        self.marker = self._init_markers()
+        ats = ApproximateTimeSynchronizer(
+            [imu_sub, odom_sub, torque_sub, wheel_sub],
+            queue_size=10, slop=0.25)
+        ats.registerCallback(self.synced_callback)
 
-        # ---- TF for wheel positions ----
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        self.robot_vertices = self.lookup_wheel_positions()
+        rospy.Subscriber('/imu/data', Imu,    self._health_imu_cb)
+        rospy.Subscriber('/odometry/filtered', Odometry, self._health_odom_cb)
+        rospy.Subscriber('/filtered_torque_data', JointState, self._health_torque_cb)
+        rospy.Subscriber('/joint_states', JointState, self._health_wheel_cb)
+        rospy.Timer(rospy.Duration(0.01), self._check_topic_health)
 
-
-
-
-        if self.robot_vertices is None:
-            rospy.logerr("Could not find wheel positions from TF, waiting 0.2 seconds and trying again.")
-            rospy.sleep(0.2)
-            self.robot_vertices = self.lookup_wheel_positions()
-            if self.robot_vertices is None:
-                rospy.logerr("Still could not find wheel positions from TF, aborting.")
-                rospy.signal_shutdown("TF lookup failed")
-                exit(1)
-        else:
-            rospy.loginfo("Found wheel positions from TF: {}".format(self.robot_vertices))
-
-        # ---- ROS Subscribers ----
-        # 1) Odom for pose + velocity
-        rospy.Subscriber("/odometry/filtered", Odometry, self.odom_callback)
-        # rospy.Subscriber("/imu/data", Imu, self.odom_callback)
-        # 2) Sensed torque
-        rospy.Subscriber("/filtered_torque_data", JointState, self.torque_callback)
-        # 3) Wheel joint states (to get actual wheel velocities)
-        rospy.Subscriber("/joint_states", JointState, self.wheelcallback)    
-        
-        rospy.loginfo("Contact Jacobian node initialized.")
-        self.timer = rospy.Timer(rospy.Duration(0.01), self.update_callback)
-
-        # ---------------------------------------------------------------------
     def dynamic_reconfig_callback(self, config, level):
-        self.M = config.mass
-        self.Br = [[config.roller_damping_Br]] * 3
-        self.Iw = config.wheel_inertia_iw
-        self.Ir = config.roller_inertia_ir
-        self.Ib = config.body_inertia_ib
-        self.TractionTorque = config.TractionTorque
-        rospy.loginfo("Reconfigure Request: mass=%.2f, Br=%.2f, Iw=%.2f, Ir=%.2f, Ib=%.2f, TractionTorque=%.2f",
-                    self.M, config.roller_damping_Br, self.Iw, self.Ir, self.Ib, self.TractionTorque)
+        self.m     = config.mass
+        self.R =      config.R
+        self.Br    = config.roller_damping_Br
+        self.scale = config.scale if hasattr(config, 'scale') else 1.0
+        # recompute inertia terms if mass or R change
+        L = math.sqrt(3) * self.R
+        self.M_mat = np.diag([self.m, self.m, L**2/2])
+        self.Ib    = 0.5 * self.m * L**2
         return config
 
-
-    # ------------------- Init Marker ------------------- #
     def _init_markers(self):
-# Arrow marker for the force vector
-        self.arrow_marker = Marker()
-        self.arrow_marker.header.frame_id = "base_link"
-        self.arrow_marker.type = Marker.ARROW
-        self.arrow_marker.scale.x =0.1# Shaft diameter
-        self.arrow_marker.scale.y = 0.1  # Arrowhead diameter
-        self.arrow_marker.scale.z = 0.1 
-        self.arrow_marker.color.a = 1.0   # Alpha transparency
-        self.threshold = self.visualize_threshold  # Threshold for arrow visualization
-        # Sphere marker for the contact point
-        self.sphere_marker = Marker()
-        self.sphere_marker.header.frame_id = "base_link"
-        self.sphere_marker.type = Marker.SPHERE
-        self.sphere_marker.scale.x = 0.025  # Sphere diameter
-        self.sphere_marker.scale.y = 0.025
-        self.sphere_marker.scale.z = 0.025
-        self.sphere_marker.color.r = 1.0   # Red color
-        self.sphere_marker.color.g = 0.0
-        self.sphere_marker.color.b = 0.0
-        self.sphere_marker.color.a = 1.0   # Fully visible
-        # For the arrow marker
-        self.arrow_marker.pose.orientation.x = 0.0
-        self.arrow_marker.pose.orientation.y = 0.0
-        self.arrow_marker.pose.orientation.z = 0.0
-        self.arrow_marker.pose.orientation.w = 1.0
+        self.arrow_marker = Marker(type=Marker.ARROW)
+        self.arrow_marker.header.frame_id = 'base_link'
+        self.arrow_marker.scale.x = self.arrow_marker.scale.y = self.arrow_marker.scale.z = 0.1
+        self.arrow_marker.color.a = 1.0
 
-        # For the sphere marker
-        self.sphere_marker.pose.orientation.x = 0.0
-        self.sphere_marker.pose.orientation.y = 0.0
-        self.sphere_marker.pose.orientation.z = 0.0
-        self.sphere_marker.pose.orientation.w = 1.0
+        self.sphere_marker = Marker(type=Marker.SPHERE)
+        self.sphere_marker.header.frame_id = 'base_link'
+        self.sphere_marker.scale.x = self.sphere_marker.scale.y = self.sphere_marker.scale.z = 0.025
+        self.sphere_marker.color.r = 1.0; self.sphere_marker.color.a = 1.0
 
+    def _health_imu_cb(self, msg):    self.last_imu_msg_time    = rospy.Time.now()
+    def _health_odom_cb(self, msg):   self.last_odom_msg_time   = rospy.Time.now()
+    def _health_torque_cb(self, msg): self.last_torque_msg_time = rospy.Time.now()
+    def _health_wheel_cb(self, msg):  self.last_wheel_msg_time  = rospy.Time.now()
 
-    # (Optional) If you want to see the wheel frames as spheres
-    def publish_wheel_markers(self, vertices):
-        marker_arr = MarkerArray()
+    def synced_callback(self, imu_msg, odom_msg, torque_msg, wheel_msg):
         now = rospy.Time.now()
-        for i, (x, y) in enumerate(vertices):
-            mk = Marker()
-            mk.header.frame_id = "base_link"
-            mk.header.stamp = now
-            mk.ns = "wheel_positions"
-            mk.id = i
-            mk.type = Marker.SPHERE
-            mk.action = Marker.ADD
-            mk.pose.position.x = x
-            mk.pose.position.y = y
-            mk.pose.position.z = 0.0
-            mk.pose.orientation.w = 1.0
-            mk.scale.x = mk.scale.y = mk.scale.z = 0.1
-            mk.color.a = 1.0
-            mk.color.r = 1.0
-            mk.color.g = 0.0
-            mk.color.b = 0.0
-            marker_arr.markers.append(mk)
-        # self.wheel_marker_pub.publish(marker_arr)
+        self.last_imu_msg_time = self.last_odom_msg_time = \
+        self.last_torque_msg_time = self.last_wheel_msg_time = now
 
-    # ------------------- Lookup Wheel Positions ------------------- #
-    def lookup_wheel_positions(self):
-        wheel_frames = ["wheel0", "wheel1", "wheel2"]
-        base_frame   = "base_link"
-        vertices = []
-        for wheel_frame in wheel_frames:
-            try:
-                trans = self.tf_buffer.lookup_transform(
-                    base_frame, wheel_frame, rospy.Time(0), rospy.Duration(0.1)
-                )
-            except:
-                rospy.logerr("TF transform to {} not found.".format(wheel_frame))
-                return None
-            else:
-                x = trans.transform.translation.x
-                y = trans.transform.translation.y
-                vertices.append((x, y))
-                # store R as distance from center
-                self.R = math.sqrt(x**2 + y**2)
-        self.publish_wheel_markers(vertices)
-        return vertices
-
-    # ------------------- Hardware Callbacks ------------------- #
-    def odom_callback(self, msg):
-        ## new callback (Imu, not odom) we dont actually need linear velocity
-        # 1) Yaw
-        q = msg.pose.pose.orientation
-        quat = [q.x, q.y, q.z, q.w]
-        roll, pitch, yaw = euler_from_quaternion(quat)
+        # IMU: linear accel & orientation
+        ax, ay = imu_msg.linear_acceleration.x, imu_msg.linear_acceleration.y
+        self.acceleration = np.array([[ax], [ay], [0]])
+        _,_,yaw = euler_from_quaternion([imu_msg.orientation.x,
+                                         imu_msg.orientation.y,
+                                         imu_msg.orientation.z,
+                                         imu_msg.orientation.w])
         self.theta = yaw
 
-        # 2) Angular velocity (omega)
-        # wx = msg.angular_velocity.x
-        # wy = msg.angular_velocity.y
-        # wz = msg.angular_velocity.z
-        # self.velocity = np.array([[wx], [wy], [wz]])
+        # IMU: angular velocity & accel_z
+        wz = imu_msg.angular_velocity.z
+        tstamp = imu_msg.header.stamp.to_sec()
+        if self.wz is not None:
+            self.angular_accel_z = (wz - self.wz) / (tstamp - self.last_wz_time)
+        self.wz, self.last_wz_time = wz, tstamp
 
+        # Torque
+        self.torque_sensed = np.array(torque_msg.position).reshape(3,1)
 
-
-        # # 3) Linear Accel from IMU
-        # ax = msg.linear_acceleration.x
-        # ay = msg.linear_acceleration.y
-        # az = msg.linear_acceleration.z
-        # self.acceleration=np.array([[ax], [ay], [az]])
-
-        # # Build Jacobians if yaw is valid
-        if self.theta is not None:
-            self.build_jacobians(self.theta)
-        ## old odom callback
-        # # 1) Yaw
-        # q = msg.pose.pose.orientation
-        # quat = [q.x, q.y, q.z, q.w]
-        # _, _, yaw = euler_from_quaternion(quat)
-        # self.theta = yaw
-
-        # 2) Robot velocity [vx, vy, wz]
-        vx = msg.twist.twist.linear.x
-        vy = msg.twist.twist.linear.y
-        wz = msg.twist.twist.angular.z
-        self.velocity = np.array([[vx], [vy], [wz]])
-
-        # # Build Jacobians if yaw is valid
-        # if self.theta is not None:
-        #     self.build_jacobians(self.theta)
-
-    def torque_callback(self, joint_msg):
-        """
-        /filtered_torque_data is sensor_msgs/JointState
-        'position' stores the 3 torque values (one per wheel).
-        """
-        self.torque_sensed = np.array(joint_msg.position).reshape(3,1)
-        self.t_last_torque = rospy.Time.now()
-        
-
-    def wheelcallback(self, joint_msg):
-        """
-        Subscribe to /joint_states (wheel velocities in joint_msg.velocity).
-        track consecutive calls to approximate dot_omega
-        """
-        # Must ensure that 'joint_msg.velocity' has 3 wheels in the same order.
-        # If your real hardware has a different JointState layout, adapt accordingly.
-        if len(joint_msg.velocity) < 3:
+        # All data ready?
+        if self.theta is None or self.acceleration is None or \
+           self.angular_accel_z is None or self.torque_sensed is None:
             return
 
-        # current wheel speeds
-        if self.angular_vel_wheels_now is None:
-            self.angular_vel_wheels_now = np.array(joint_msg.velocity).reshape(3,1)
-            self.angular_vel_wheels_prev = self.angular_vel_wheels_now.copy()
-            return
-        else:
-            # shift the old into prev
-            self.angular_vel_wheels_prev = self.angular_vel_wheels_now.copy()
-            # new
-            self.angular_vel_wheels_now  = np.array(joint_msg.velocity).reshape(3,1)
+        # Build Jacobians & compute forces
+        self.build_jacobians(self.theta)
+        out = self.external_forces()
+        self.visualize(out)
+        msg = Float64MultiArray(); msg.data = out
+        self.force_pub.publish(msg)
 
-        self.wheel_angular_acceleration = self.angular_vel_wheels_now - self.angular_vel_wheels_prev
-
-    # ------------------- Build Jacobians ------------------- #
-    def build_jacobians(self, theta):
-        self.Jcw = (1.0/self.rw)*np.array([
-            [-math.sin(theta),                      math.cos(theta),                      self.R],
-            [-math.sin(theta+2.0/3.0*math.pi),      math.cos(theta+2.0/3.0*math.pi),      self.R],
-            [-math.sin(theta+4.0/3.0*math.pi),      math.cos(theta+4.0/3.0*math.pi),      self.R]
+    def build_jacobians(self, th):
+        self.Jcw = (1/self.rw)*np.array([
+            [-math.sin(th), math.cos(th), self.R],
+            [-math.sin(th+2*math.pi/3), math.cos(th+2*math.pi/3), self.R],
+            [-math.sin(th+4*math.pi/3), math.cos(th+4*math.pi/3), self.R]
         ])
-
-        self.Jcwdot = (1.0/self.rw)*np.array([
-            [-math.cos(theta),                     -math.sin(theta),                      0.0],
-            [-math.cos(theta+2.0/3.0*math.pi),     -math.sin(theta+2.0/3.0*math.pi),      0.0],
-            [-math.cos(theta+4.0/3.0*math.pi),     -math.sin(theta+4.0/3.0*math.pi),      0.0]
-        ])
-
         self.Jcwinv = np.linalg.inv(self.Jcw)
-        self.Jcwdot_inv = np.linalg.pinv(self.Jcwdot)
-
-        self.Jcr = (1.0/self.rr)*np.array([
-            [math.cos(theta),                      math.sin(theta),                      0.0],
-            [math.cos(theta+2.0/3.0*math.pi),      math.sin(theta+2.0/3.0*math.pi),      0.0],
-            [math.cos(theta+4.0/3.0*math.pi),      math.sin(theta+4.0/3.0*math.pi),      0.0]
+        self.Jcr = (1/self.rr)*np.array([
+            [math.cos(th), math.sin(th), 0],
+            [math.cos(th+2*math.pi/3), math.sin(th+2*math.pi/3), 0],
+            [math.cos(th+4*math.pi/3), math.sin(th+4*math.pi/3), 0]
         ])
 
-        self.Jcrdot = (1.0/self.rr)*np.array([
-            [-math.sin(theta),                     math.cos(theta),                      0.0],
-            [-math.sin(theta+2.0/3.0*math.pi),     math.cos(theta+2.0/3.0*math.pi),      0.0],
-            [-math.sin(theta+4.0/3.0*math.pi),     math.cos(theta+4.0/3.0*math.pi),      0.0]
-        ])
-
-    # ------------------- Periodic Update ------------------- #
-    def update_callback(self, event):
-        # 1) Manage time
-        if self.t_last is None:
-            self.t_last = rospy.Time.now().to_sec()
-            return
-        self.t_now = rospy.Time.now().to_sec()
-        self.delta_t = self.t_now - self.t_last
-        self.t_last = self.t_now
-
-        if  self.t_last_torque is None or rospy.Time.now() - self.t_last_torque > rospy.Duration(1):
-            self.torque_sensed = None
-
-
-
-
-        # 2) Check we have enough data
-        if (self.theta is None):
-            rospy.logwarn_throttle(0.1, "Waiting for  Theta")
-            return
-        if  (self.torque_sensed is None):
-            rospy.logwarn_throttle(0.1, "Waiting for Torque")
-            return
-        if (self.angular_vel_wheels_now is None) or (self.wheel_angular_acceleration is None):
-            rospy.logwarn_throttle(0.1, "Waiting for /joint_states data to compute wheel acceleration.")
-            return
-
-        # 3) Compute external force
-        output_nominal = self.external_forces()
-
-        # 4) Visualize
-        self.visualize(output_nominal)
-
-        # 5) Publish numeric data
-        msg = Float64MultiArray()
-        msg.data = output_nominal
-        self.force_value_pub.publish(msg)
-
-    # ------------------- Core Math: External Forces ------------------- #
     def external_forces(self):
-        """
-          a = Jcw^{-1} * (wheel_angular_accel)  +  Jcwdot_inv * (wheel_angular_vel)
-        Then compute no-external-force torque, compare w/ sensed, and get Fext.
-        """
-        # a) body acceleration from the wheels
-        self.acceleration = np.matmul(self.Jcwinv, self.wheel_angular_acceleration)  + np.matmul(self.Jcwdot_inv, self.angular_vel_wheels_now)
+        # roller damping like MATLAB: Br_k = 0.2*tanh(0.4*qr_dot)
+        Xd = np.array([[0],[0],[self.wz]])
+        qr_dot = self.Jcr.dot(Xd)
+        Br_vec = self.Br * np.tanh(0.4 * qr_dot)
 
-        #body acceleration from imu
-        # self.acceleration gotten in odom_callback
+        # inertia wrench
+        X_dd = np.vstack([self.acceleration[0:2], [[self.angular_accel_z]]])
+        T_noF = self.Jcwinv.T.dot(self.M_mat.dot(X_dd) + self.Jcr.T.dot(Br_vec))
 
-        # rospy.logwarn([self.acceleration, self.acceleration])
-        msg = Float64MultiArray()
-        msg.data=self.acceleration
-        self.pub_lina.publish(msg)
-        # b) torque_no_fext: eqn(38)-like
-        #    T_noFext = Jcw^T * [ M*a + Jcr^T * Br ]
-        T_noFext = np.matmul(
-            self.Jcwinv.T,
-            self.M*self.acceleration + np.matmul(self.Jcr.T, self.Br)
-        )
+        # residual & wrench
+        deltaT = T_noF - self.torque_sensed
+        W = self.scale * (self.Jcw.T.dot(deltaT))
+        Fx, Fy = W[0,0], W[1,0]
 
-        # c) difference vs sensed
-        #    T_sensed is 3x1
-        if (self.torque_sensed is None):
-            diff_torque = 0
-        else:
-            diff_torque = T_noFext - self.torque_sensed  # shape(3,1)
-        print("diff torque: ", diff_torque)
-        # d) external force in body frame
-        #    F_ext_body = Jcw^T * (T_noFext - T_sensed)
-        F_body = np.matmul(self.Jcw.T, diff_torque)
-        Fextx = F_body[0,0]
-        Fexty = F_body[1,0]
-        # optionally Fz=F_body[2], but we presumably ignore
+        # moment balance
+        RH = self.scale*(self.Ib*self.angular_accel_z - (self.R/self.rw)*np.sum(self.torque_sensed))
+        a, b, c = Fy, -Fx, -RH
 
-        # e) transform to local or do intersection in local
-        tf_Fext = self.vector_transform([Fextx, Fexty])
-        contact_pt = self.force_line_intersection(self.robot_vertices, tf_Fext)
+        pt, ok = self.force_line_intersection(self.geom_vertices, (a,b,c))
+        return [pt[0], pt[1], Fx, Fy, 1.0 if ok else 0.0]
 
-        rospy.loginfo("Contact=(%.3f, %.3f), Fext=(%.3f, %.3f)",
-                      contact_pt[0], contact_pt[1], Fextx, Fexty)
-        return [contact_pt[0], contact_pt[1], Fextx, Fexty]
+    def force_line_intersection(self, verts, abc):
+        a,b,c = abc
+        tol = 1e-8*(abs(a)+abs(b))
+        pts = []
+        for i in range(len(verts)):
+            x1,y1 = verts[i]; x2,y2 = verts[(i+1)%len(verts)]
+            dx,dy = x2-x1, y2-y1
+            denom = a*dx + b*dy
+            if abs(denom)<tol: continue
+            t = -(a*x1 + b*y1 + c)/denom
+            if 0<=t<=1:
+                pts.append((x1+t*dx, y1+t*dy))
+        if not pts:
+            return (self.last_cp, False)
+        projs = [((px-self.com[0])*a + (py-self.com[1])*b) for px,py in pts]
+        idx = int(np.argmax(projs)) if any(p>0 for p in projs) else \
+              min(range(len(pts)), key=lambda i: math.hypot(pts[i][0]-self.com[0], pts[i][1]-self.com[1]))
+        cp = pts[idx]; self.last_cp = cp
+        return (cp, True)
 
-    def vector_transform(self, Fext):
-        """
-        Rotate global force -> local frame, if needed.
-        """
-        x_global, y_global = Fext
-        cosT = math.cos(self.theta)
-        sinT = math.sin(self.theta)
-        # same transform you had: F_local = R(-theta)*F_global
-        x_n =  cosT*x_global + sinT*y_global
-        y_n = -sinT*x_global + cosT*y_global
-        return [x_n, y_n]
-
-    def force_line_intersection(self, robot_vertices, Fext):
-        """
-        Same triangular intersection logic, but corrected for y=... - edge_start[1].
-        """
-        top_left, bottom_tip, top_right = robot_vertices
-        edges = [
-            (top_left, bottom_tip),
-            (top_left, top_right),
-            (bottom_tip, top_right),
-        ]
-
-        intersections = []
-        edge_flag = [False, False, False]
-        contact_point = [0, 0]
-        edge_count = -1
-
-        for edge_start, edge_end in edges:
-            edge_count += 1
-            denom = (Fext[1]*(edge_end[0] - edge_start[0])
-                     - Fext[0]*(edge_end[1] - edge_start[1]))
-            if abs(denom) < 1e-12:
-                continue
-            s = ((Fext[0]*edge_start[1]) - (Fext[1]*edge_start[0])) / denom
-            if 0 <= s <= 1:
-                x = edge_start[0] + s*(edge_end[0] - edge_start[0])
-                # **Important** fix: (edge_end[1] - edge_start[1]) not [0]
-                y = edge_start[1] + s*(edge_end[1] - edge_start[1])
-                edge_flag[edge_count] = True
-                intersections.append((x, y))
-
-        if (Fext[0] == 0 and Fext[1] == 0):
-            rospy.loginfo("No intersection, zero force.")
-            return [0, 0]
-
-        elif Fext[0] != 0:
-            if edge_flag[0] and edge_flag[1]:
-                if Fext[1] > 0:
-                    contact_point = intersections[0]
-                else:
-                    contact_point = intersections[1]
-            elif edge_flag[0] and edge_flag[2]:
-                if Fext[0] > 0:
-                    contact_point = intersections[0]
-                else:
-                    contact_point = intersections[1]
-            elif edge_flag[1] and edge_flag[2]:
-                if Fext[1] > 0:
-                    contact_point = intersections[0]
-                else:
-                    contact_point = intersections[1]
-            else:
-                # If exactly one intersection or none
-                if len(intersections) == 1:
-                    contact_point = intersections[0]
-        else:
-            # purely vertical Fext
-            if len(intersections) == 1:
-                contact_point = intersections[0]
-            elif len(intersections) >= 2:
-                if Fext[1] > 0:
-                    contact_point = intersections[0]
-                else:
-                    contact_point = intersections[-1]
-
-        return contact_point
-
-    # ------------------- Visualization ------------------- #
-    def visualize(self, output_nominal):
-        contact_x, contact_y, Fextx, Fexty = output_nominal
-        norm = math.hypot(Fextx, Fexty)
-
-        # Publish the sphere marker at the contact point
+    def visualize(self, data):
+        cx, cy, Fx, Fy, hit = data
+        norm = math.hypot(Fx, Fy)
+        if not hit:
+            rospy.logwarn_throttle(1, "No intersection to visualize")
+            return
         self.sphere_marker.header.stamp = rospy.Time.now()
-        self.sphere_marker.pose.position.x = contact_x
-        self.sphere_marker.pose.position.y = contact_y
-        self.sphere_marker.pose.position.z = 0.0
-        if norm >= self.threshold:
-            self.pub_sphere.publish(self.sphere_marker)
-        else:
-                self.sphere_marker.pose.position.x = 0
-                self.sphere_marker.pose.position.y = 0
-                self.sphere_marker.pose.position.z = 0
-                self.pub_sphere.publish(self.sphere_marker)
-                self.arrow_marker.points = []
-                self.pub_arrow.publish(self.arrow_marker)
-                rospy.loginfo("Force magnitude below threshold, not visualizing arrow.")
-                return
-
-        arrow_length = 0.5
-        start_pt = Point(
-            x=contact_x,
-            y=contact_y,
-            z=0.0
-        )
-        end_pt = Point(
-            x=contact_x + arrow_length*Fextx/norm,
-            y=contact_y + arrow_length*Fexty/norm, 
-            z=0.0
-        )
-        rospy.loginfo("arrow end_pt=(%.3f, %.3f)", end_pt.x, end_pt.y)
-                    
-
-        # Set arrow color (Red -> Blue gradient)
-        self.arrow_marker.color.r = 0
-        self.arrow_marker.color.g = 1
-        self.arrow_marker.color.b = 0
-
-        self.arrow_marker.header.stamp = rospy.Time.now()
-        self.arrow_marker.points = [start_pt, end_pt]
+        self.sphere_marker.pose.position.x = cx
+        self.sphere_marker.pose.position.y = cy
+        self.pub_sphere.publish(self.sphere_marker)
+        if norm < self.visualize_threshold:
+            self.arrow_marker.points = []
+            self.pub_arrow.publish(self.arrow_marker)
+            return
+        start = Point(x=cx,y=cy,z=0)
+        end   = Point(x=cx+0.5*Fx/norm,y=cy+0.5*Fy/norm,z=0)
+        self.arrow_marker.points = [start,end]
         self.pub_arrow.publish(self.arrow_marker)
 
-def main():
-    rospy.init_node("Contact_Jacobian", anonymous=True)
-
-    # Get params from ROS param server
-    rw = rospy.get_param("~wheel_radius", 0.1)
-    rr = rospy.get_param("~roller_radius", 0.00918135)
-    BotMass  = rospy.get_param("~mass", 30)
-    Br = rospy.get_param("~roller_damping_Br", 0.2)
-    Iw = rospy.get_param("~wheel_inertia_iw", 1)
-    Ir = rospy.get_param("~roller_inertia_ir", 1)
-    Ib = rospy.get_param("~body_inertia_ib", 1)
-    TractionTorque = rospy.get_param("~TractionTorque", 1)
-
-    external_torque = ContactJacobian(rw, rr, BotMass, Br, Iw, Ir, Ib, TractionTorque)
+    def _check_topic_health(self, event):
+        now = rospy.Time.now()
+        for last, topic in [
+            (self.last_imu_msg_time, '/imu/data'),
+            (self.last_odom_msg_time, '/odometry/filtered'),
+            (self.last_torque_msg_time, '/filtered_torque_data'),
+            (self.last_wheel_msg_time, '/joint_states')]:
+            if last is None or (now-last).to_sec()>2.0:
+                rospy.logwarn_throttle(0.5, "Topic %s has not published recently", topic)
+if __name__=='__main__':
+    rospy.init_node('Contact_Jacobian')
+    params = {k: rospy.get_param('~'+k, v) for k,v in zip(
+        ['R','wheel_radius','roller_radius','mass','roller_damping_Br','scale'],
+        [0.248195487469,0.1,0.00918135,30,0.2,1.0]
+    )}
+    ContactJacobian(
+        params['R'],
+        params['wheel_radius'], params['roller_radius'],
+        params['mass'], params['roller_damping_Br']
+    )
     rospy.spin()
-
-if __name__ == "__main__":
-    main()
