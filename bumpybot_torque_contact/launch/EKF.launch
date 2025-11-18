@@ -1,0 +1,7 @@
+   <launch> 
+    <node pkg="robot_localization" type="ekf_localization_node" name="bumpybot_ekf" clear_params="true">
+      <remap from="/cmd_vel" to="/trikey/base_controller/cmd_vel"/>
+        <remap from="/diagnostics" to="/diagnostics/bumpybot_ekf" />
+      <rosparam command="load" file="$(find bumpybot_torque_contact)/cfg/bumpyBotEKF.yaml" />
+    </node>
+    </launch>
