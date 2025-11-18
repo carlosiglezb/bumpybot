@@ -19,12 +19,12 @@ from BBpolygons import load_BB_outline
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 class ContactJacobian():
-    def __init__(self,R, rw, rr, m, Br, F_MIN, outline_path=None):
+    def __init__(self,R, rw, rr, m, Br_alpha, Br_beta, F_MIN, outline_path=None):
         # Dynamic reconfigure
         self.R = R
         # Basic params
         self.rw, self.rr = rw, rr
-        self.m, self.Br = m, Br
+        self.m, self.Br_alpha, self.Br_beta = m, Br_alpha, Br_beta
         self.scale = 1.0
         self.visualize_threshold = 0.025
         L = math.sqrt(3) * self.R
@@ -44,6 +44,10 @@ class ContactJacobian():
         # State vars
         self.theta = None
         self.wz = None
+        self.last_wz_time = None    # ← add this
+        self.vx = None
+        self.vy = None
+
         self.acceleration = None
         self.angular_accel_z = None
         self.torque_sensed = None
@@ -72,7 +76,7 @@ class ContactJacobian():
 
         ats = ApproximateTimeSynchronizer(
             [imu_sub, odom_sub, torque_sub, wheel_sub],
-            queue_size=10, slop=0.25)
+            queue_size=3, slop=0.025)
         ats.registerCallback(self.synced_callback)
 
         rospy.Subscriber('/imu/data', Imu,    self._health_imu_cb)
@@ -98,7 +102,8 @@ class ContactJacobian():
     def dynamic_reconfig_callback(self, config, level):
         self.m     = config.mass
         self.R =      config.R
-        self.Br    = config.roller_damping_Br
+        self.Br_alpha    = config.roller_damping_alpha
+        self.Br_beta     = config.roller_damping_beta
         self.scale = config.scale if hasattr(config, 'scale') else 1.0
         # recompute inertia terms if mass or R change
         L = math.sqrt(3) * self.R
@@ -108,6 +113,8 @@ class ContactJacobian():
         self.outlier_threshold_ratio  = config.outlier_threshold_ratio
         self.outlier_window_size      = config.outlier_window_size
         self.enable_outlier_reset     = config.enable_outlier_reset
+        self.F_MIN                   = config.F_MIN
+
 
         # if window size changed, rebuild buffer
         if len(self._force_mag_buffer) != self.outlier_window_size:
@@ -183,21 +190,39 @@ class ContactJacobian():
         self.last_imu_msg_time = self.last_odom_msg_time = \
         self.last_torque_msg_time = self.last_wheel_msg_time = now
 
-        # IMU: linear accel & orientation
+        # IMU: linear accel
         ax, ay = imu_msg.linear_acceleration.x, imu_msg.linear_acceleration.y
         self.acceleration = np.array([[ax], [ay], [0]])
-        _,_,yaw = euler_from_quaternion([imu_msg.orientation.x,
-                                         imu_msg.orientation.y,
-                                         imu_msg.orientation.z,
-                                         imu_msg.orientation.w])
+        # Print debug for IMU acceleration
+        # ODOM: orientation (yaw) and angular velocity (wz)
+        orientation_q = odom_msg.pose.pose.orientation
+        _, _, yaw = euler_from_quaternion([
+            orientation_q.x,
+            orientation_q.y,
+            orientation_q.z,
+            orientation_q.w
+        ])
         self.theta = yaw
 
-        # IMU: angular velocity & accel_z
-        wz = imu_msg.angular_velocity.z
-        tstamp = imu_msg.header.stamp.to_sec()
-        if self.wz is not None:
-            self.angular_accel_z = (wz - self.wz) / (tstamp - self.last_wz_time)
-        self.wz, self.last_wz_time = wz, tstamp
+        self.vx = odom_msg.twist.twist.linear.x = 0 #THESE DONT WORK YET?
+        self.vy = odom_msg.twist.twist.linear.y = 0
+
+        wz = odom_msg.twist.twist.angular.z
+        tstamp = odom_msg.header.stamp.to_sec()
+
+        if self.last_wz_time is None:
+            # first call: just initialize
+            self.angular_accel_z = 0.0
+        else:
+            dt = tstamp - self.last_wz_time
+            if dt > 1e-6:
+                self.angular_accel_z = (wz - self.wz) / dt
+            else:
+                # too small or non-positive dt
+                self.angular_accel_z = 0.0
+
+        self.wz = wz
+        self.last_wz_time = tstamp
 
         # Torque
         self.torque_sensed = np.array(torque_msg.position).reshape(3,1)
@@ -235,9 +260,10 @@ class ContactJacobian():
 
     def external_forces(self):
         # roller damping like MATLAB: Br_k = 0.2*tanh(0.4*qr_dot)
-        Xd = np.array([[0],[0],[self.wz]])
+        Xd = np.array([[self.vx],[self.vy],[self.wz]])
         qr_dot = self.Jcr.dot(Xd)
-        Br_vec = self.Br * np.tanh(0.4 * qr_dot)
+
+        Br_vec = self.Br_alpha * np.tanh(self.Br_beta* qr_dot)
 
         # inertia wrench
         X_dd = np.vstack([self.acceleration[0:2], [[self.angular_accel_z]]])
@@ -248,7 +274,11 @@ class ContactJacobian():
         W = self.scale * (self.Jcw.T.dot(deltaT))
         Fx, Fy = W[0,0], W[1,0]
         if math.hypot(Fx, Fy) < self.F_MIN:
-            return [self.last_cp[0], self.last_cp[1], Fx, Fy, 0.0]
+            return [self.last_cp[0],
+                self.last_cp[1],
+                0.0,  # zero out small Fx
+                0.0,  # zero out small Fy
+                0.0]  # hit flag
         # moment balance
         RH = self.scale*(self.Ib*self.angular_accel_z - (self.R/self.rw)*np.sum(self.torque_sensed))
         a, b, c = Fy, -Fx, -RH
@@ -328,16 +358,16 @@ class ContactJacobian():
             (self.last_torque_msg_time, '/filtered_torque_data'),
             (self.last_wheel_msg_time, '/joint_states')]:
             if last is None or (now-last).to_sec()>2.0:
-                rospy.logwarn_throttle(0.5, "Topic %s has not published recently", topic)
+                rospy.logwarn_throttle(5.0, "Topic %s has not published recently", topic)
 if __name__=='__main__':
     rospy.init_node('Contact_Jacobian')
     params = {k: rospy.get_param('~'+k, v) for k,v in zip(
-        ['R','wheel_radius','roller_radius','mass','roller_damping_Br', 'F_MIN','scale'],
-        [0.248195487469,0.1,0.00918135,30,0.2,0.5,1.0]
+        ['R','wheel_radius','roller_radius','mass','roller_damping_alpha', 'roller_damping_beta', 'F_MIN','scale'],
+        [0.248195487469,0.1,0.00918135,80,0.2,0.4,0.5,1.0]
     )}
     ContactJacobian(
         params['R'],
         params['wheel_radius'], params['roller_radius'],
-        params['mass'], params['roller_damping_Br'],params['F_MIN']
+        params['mass'], params['roller_damping_alpha'],params['roller_damping_beta'],params['F_MIN']
     )
     rospy.spin()
