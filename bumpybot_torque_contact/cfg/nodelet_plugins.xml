@@ -1,0 +1,19 @@
+<library path="lib/libbumpybot_torque_contact_nodelets">
+  <class name="bumpybot_torque_contact/ContactEstimator"
+         type="bumpybot_torque_contact::ContactEstimator"
+         base_class_type="nodelet::Nodelet">
+    <description>Contact estimator nodelet.</description>
+  </class>
+
+  <class name="bumpybot_torque_contact/EncoderFilter"
+         type="bumpybot_torque_contact::EncoderFilter"
+         base_class_type="nodelet::Nodelet">
+    <description>Encoder filter nodelet.</description>
+  </class>
+
+  <class name="bumpybot_torque_contact/TorqueFilterGains"
+         type="bumpybot_torque_contact::TorqueFilterGains"
+         base_class_type="nodelet::Nodelet">
+    <description>Torque filter gains nodelet.</description>
+  </class>
+</library>

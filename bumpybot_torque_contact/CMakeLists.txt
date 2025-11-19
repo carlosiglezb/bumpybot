@@ -17,6 +17,8 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   visualization_msgs
   dynamic_reconfigure
+  nodelet
+  pluginlib
 )
 
 ## System dependencies are found with CMake's conventions
@@ -110,9 +112,9 @@ generate_dynamic_reconfigure_options(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES bumpybot_torque_contact
-#  CATKIN_DEPENDS roscpp rospy
+ INCLUDE_DIRS include
+ LIBRARIES bumpybot_torque_contact_nodelets
+ CATKIN_DEPENDS roscpp rospy pluginlib nodelet
 #  DEPENDS system_lib
 )
 
@@ -123,14 +125,16 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+   include
   ${catkin_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/bumpybot_torque_contact.cpp
-# )
+add_library(bumpybot_torque_contact_nodelets
+  src/torque_filter_gains.cpp
+  src/encoder_filter.cpp
+  src/contact_estimator.cpp
+)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -152,10 +156,10 @@ include_directories(
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-## Specify libraries to link a library or executable target against
-# target_link_libraries(${PROJECT_NAME}_node
-#   ${catkin_LIBRARIES}
-# )
+# Specify libraries to link a library or executable target against
+target_link_libraries(bumpybot_torque_contact_nodelets
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
@@ -173,6 +177,16 @@ catkin_install_python(PROGRAMS
   scripts/force_mag_angle.py
   scripts/BBpolygons.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+## Install the library so pluginlib can find it
+install(TARGETS bumpybot_torque_contact_nodelets
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+)
+## Install nodelet plugin description
+install(FILES
+  cfg/nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
 ## Mark executables for installation
