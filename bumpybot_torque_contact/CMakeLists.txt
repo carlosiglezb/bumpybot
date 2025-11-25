@@ -23,7 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-
+find_package(Eigen3 REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -98,6 +98,7 @@ find_package(catkin REQUIRED COMPONENTS
 # Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/TorqueDataFilter.cfg
+  cfg/EncoderFilter.cfg
   cfg/Jacobian.cfg
   # cfg/DynReconf2.cfg
 )
@@ -112,11 +113,12 @@ generate_dynamic_reconfigure_options(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include
- LIBRARIES bumpybot_torque_contact_nodelets
- CATKIN_DEPENDS roscpp rospy pluginlib nodelet
-#  DEPENDS system_lib
+  INCLUDE_DIRS include
+  LIBRARIES bumpybot_torque_contact_nodelets
+  CATKIN_DEPENDS roscpp rospy pluginlib nodelet
+  DEPENDS system_lib Eigen3
 )
+
 
 ###########
 ## Build ##
@@ -125,9 +127,12 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-   include
+  include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
+
+
 
 ## Declare a C++ library
 add_library(bumpybot_torque_contact_nodelets
@@ -160,6 +165,7 @@ add_library(bumpybot_torque_contact_nodelets
 target_link_libraries(bumpybot_torque_contact_nodelets
   ${catkin_LIBRARIES}
 )
+
 
 #############
 ## Install ##

@@ -1,12 +1,51 @@
 <launch>
 
-    <node pkg="bumpybot_torque_contact" type="torque_data_filter.py" name="torque_data_filter">
-    </node>
-    
-    <node pkg="bumpybot_torque_contact" type="trikey_jacobian.py" name="trikey_jacobian">
-    </node>
+  <!-- Load polygon into the GLOBAL namespace -->
+  <rosparam file="$(find bumpybot_torque_contact)/cfg/BB_outline.yaml" />
 
-    
+  <!-- TorqueFilterGains gain matrix (global, nodelet reads with nh_) -->
+  <rosparam>
+    torque_gain_matrix: [
+      [-2.60724283168311, 183.734058490264,   -1.12447714975234],
+      [ 1.83258025236275,   0.572449638693392, 157.062364542762],
+      [186.701437993996,    2.32264387372807,  -2.68006969627485]
+    ]
+  </rosparam>
 
+  <!-- Nodelet manager -->
+  <node pkg="nodelet" type="nodelet" name="torque_contact_manager"
+        args="manager" output="screen" />
+
+<!-- Static transform for the outline's marker -->
+  <node pkg="tf2_ros" type="static_transform_publisher"
+      name="bumpybot_outline_tf"
+      args="0 0 0 0 0 0 base_link bumpybot_outline" />
+
+
+  <!-- ContactEstimator nodelet -->
+  <node pkg="nodelet" type="nodelet" name="contact_estimator"
+        args="load bumpybot_torque_contact/ContactEstimator torque_contact_manager"
+        output="screen">
+    <!-- No namespace params, ContactEstimator reads /BUMPYBOT_OUTLINE directly -->
+  </node>
+
+  <!-- EncoderFilter nodelet -->
+<node pkg="nodelet" type="nodelet" name="encoder_filter"
+      args="load bumpybot_torque_contact/EncoderFilter torque_contact_manager"
+      output="screen" />
+
+
+  <!-- TorqueFilterGains nodelet -->
+  <node pkg="nodelet" type="nodelet" name="torque_filter_gains"
+        args="load bumpybot_torque_contact/TorqueFilterGains torque_contact_manager"
+        output="screen">
+
+    <param name="enable_downsampling" value="false" />
+    <param name="downsample_factor"   value="5" />
+    <param name="enable_low_pass"     value="true" />
+    <param name="low_pass_window_size" value="120" />
+    <param name="zeroing_duration"    value="3.0" />
+    <param name="T_MIN"               value="0.0" />
+  </node>
 
 </launch>
